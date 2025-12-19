@@ -1,0 +1,256 @@
+{
+  "bsonType": "object",
+  "permission": {
+    "read": true,
+    "create": "'CREATE_UNI_ID_USERS' in auth.permission",
+    "update": "doc._id == auth.uid || 'UPDATE_UNI_ID_USERS' in auth.permission",
+    "delete": "'DELETE_UNI_ID_USERS' in auth.permission"
+  },
+  "properties": {
+    "_id": {
+      "description": "ID"
+    },
+    "username": {
+      "bsonType": "string",
+      "title": "username",
+      "trim": "both",
+      "permission": {
+        "read": "doc._id == auth.uid || 'READ_UNI_ID_USERS' in auth.permission",
+        "write": "'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "password": {
+      "bsonType": "password",
+      "title": "password",
+      "trim": "both"
+    },
+    "nickname": {
+      "bsonType": "string",
+      "title": "nickname",
+      "trim": "both",
+      "permission": {
+        "read": true,
+        "write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "avatar": {
+      "bsonType": "string",
+      "title": "avatar",
+      "trim": "both",
+      "permission": {
+        "read": true,
+        "write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "gender": {
+      "bsonType": "int",
+      "defaultValue": 0,
+      "title": "gender",
+      "description": "0-unknown, 1-male, 2-female",
+      "permission": {
+        "read": true,
+        "write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "mobile": {
+      "bsonType": "string",
+      "title": "mobile",
+      "trim": "both",
+      "permission": {
+        "read": "doc._id == auth.uid || 'READ_UNI_ID_USERS' in auth.permission",
+        "write": "'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "email": {
+      "bsonType": "string",
+      "title": "email",
+      "format": "email",
+      "trim": "both",
+      "permission": {
+        "read": "doc._id == auth.uid || 'READ_UNI_ID_USERS' in auth.permission",
+        "write": "'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "status": {
+      "bsonType": "int",
+      "defaultValue": 0,
+      "title": "status",
+      "description": "0-normal, 1-disabled",
+      "permission": {
+        "read": "doc._id == auth.uid || 'READ_UNI_ID_USERS' in auth.permission",
+        "write": "'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "token": {
+      "bsonType": "array",
+      "permission": {
+        "read": false,
+        "write": "'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "register_date": {
+      "bsonType": "timestamp",
+      "forceDefaultValue": {
+        "$env": "now"
+      },
+      "permission": {
+        "read": "doc._id == auth.uid || 'READ_UNI_ID_USERS' in auth.permission",
+        "write": "'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "last_login_date": {
+      "bsonType": "timestamp",
+      "permission": {
+        "read": "doc._id == auth.uid || 'READ_UNI_ID_USERS' in auth.permission",
+        "write": "'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "user_role": {
+      "bsonType": "int",
+      "defaultValue": 0,
+      "title": "user_role",
+      "description": "0-unset, 1-crew, 2-actor",
+      "permission": {
+        "read": true,
+        "write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "auth_status": {
+      "bsonType": "int",
+      "defaultValue": 0,
+      "title": "auth_status",
+      "description": "0-unverified, 1-pending, 2-verified, 3-rejected",
+      "permission": {
+        "read": true,
+        "write": "'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "credit_score_crew": {
+      "bsonType": "int",
+      "defaultValue": 100,
+      "title": "credit_score_crew",
+      "description": "Crew credit score, range 0-150",
+      "permission": {
+        "read": true,
+        "write": "'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "credit_score_actor": {
+      "bsonType": "int",
+      "defaultValue": 100,
+      "title": "credit_score_actor",
+      "description": "Actor credit score, range 0-150",
+      "permission": {
+        "read": true,
+        "write": "'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "verification_status": {
+      "bsonType": "string",
+      "defaultValue": "none",
+      "title": "verification_status",
+      "description": "none, pending, verified",
+      "permission": {
+        "read": true,
+        "write": "'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "wallet_balance": {
+      "bsonType": "int",
+      "defaultValue": 0,
+      "title": "wallet_balance",
+      "description": "Wallet balance in cents",
+      "permission": {
+        "read": "doc._id == auth.uid || 'READ_UNI_ID_USERS' in auth.permission",
+        "write": "'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "height": {
+      "bsonType": "int",
+      "title": "height",
+      "description": "Height in cm (for actor)",
+      "permission": {
+        "read": true,
+        "write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "body_type": {
+      "bsonType": "string",
+      "title": "body_type",
+      "description": "Body type: slim, normal, athletic, plus",
+      "permission": {
+        "read": true,
+        "write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "skills": {
+      "bsonType": "array",
+      "title": "skills",
+      "description": "Special skills for actor",
+      "permission": {
+        "read": true,
+        "write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "video_card_url": {
+      "bsonType": "string",
+      "title": "video_card_url",
+      "description": "Video portfolio URL for actor",
+      "permission": {
+        "read": true,
+        "write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "profile_text": {
+      "bsonType": "string",
+      "title": "profile_text",
+      "description": "Profile description",
+      "permission": {
+        "read": true,
+        "write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "current_location": {
+      "bsonType": "object",
+      "title": "current_location",
+      "description": "Current GeoJSON location",
+      "permission": {
+        "read": true,
+        "write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "location_update_time": {
+      "bsonType": "timestamp",
+      "title": "location_update_time",
+      "permission": {
+        "read": true,
+        "write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "online_status": {
+      "bsonType": "int",
+      "defaultValue": 0,
+      "title": "online_status",
+      "description": "0-offline, 1-online",
+      "permission": {
+        "read": true,
+        "write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "wx_openid": {
+      "bsonType": "object",
+      "permission": {
+        "read": "'READ_UNI_ID_USERS' in auth.permission",
+        "write": "'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    },
+    "wx_unionid": {
+      "bsonType": "string",
+      "permission": {
+        "read": "'READ_UNI_ID_USERS' in auth.permission",
+        "write": "'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+      }
+    }
+  },
+  "required": []
+}
