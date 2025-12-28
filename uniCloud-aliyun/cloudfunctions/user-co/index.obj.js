@@ -2,6 +2,17 @@ const db = uniCloud.database()
 const dbCmd = db.command
 const uniIdCommon = require('uni-id-common')
 
+// 获取认证状态文本（独立函数，避免 this 上下文问题）
+function getAuthStatusText(status) {
+  const statusMap = {
+    0: '未认证',
+    1: '审核中',
+    2: '已认证',
+    3: '认证失败'
+  }
+  return statusMap[status] || '未知'
+}
+
 module.exports = {
   _before: async function () {
     // 跳过不需要登录的方法
@@ -106,7 +117,7 @@ module.exports = {
         data: {
           ...user,
           user_role_text: user.user_role === 1 ? '剧组' : (user.user_role === 2 ? '演员' : '未设置'),
-          auth_status_text: this._getAuthStatusText(user.auth_status),
+          auth_status_text: getAuthStatusText(user.auth_status),
           credit_score: user.user_role === 1 ? user.credit_score_crew : user.credit_score_actor
         }
       }
@@ -741,20 +752,5 @@ module.exports = {
         message: error.message || '系统错误'
       }
     }
-  },
-
-  /**
-   * 获取认证状态文本
-   * @param {Number} status 认证状态
-   * @returns {String} 状态文本
-   */
-  _getAuthStatusText(status) {
-    const statusMap = {
-      0: '未认证',
-      1: '审核中',
-      2: '已认证',
-      3: '认证失败'
-    }
-    return statusMap[status] || '未知'
   }
 }
