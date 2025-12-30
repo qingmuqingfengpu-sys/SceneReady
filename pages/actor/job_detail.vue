@@ -281,11 +281,31 @@ export default {
     async loadJobDetail() {
       try {
         this.loading = true
-        const db = uniCloud.database()
-        const res = await db.collection('orders').doc(this.jobId).get()
 
-        if (res.result.data && res.result.data.length > 0) {
-          this.job = res.result.data[0]
+        // 使用云对象获取订单详情（公开接口，不需要是订单参与者）
+        const orderCo = uniCloud.importObject('order-co')
+        const res = await orderCo.getAvailableJobs({
+          page: 1,
+          pageSize: 1
+        })
+
+        // 从可用订单中查找，如果找不到则尝试直接查询
+        let jobData = null
+        if (res.code === 0 && res.data && res.data.list) {
+          jobData = res.data.list.find(j => j._id === this.jobId)
+        }
+
+        // 如果在可用列表中找不到，直接查询数据库（向后兼容）
+        if (!jobData) {
+          const db = uniCloud.database()
+          const dbRes = await db.collection('orders').doc(this.jobId).get()
+          if (dbRes.result.data && dbRes.result.data.length > 0) {
+            jobData = dbRes.result.data[0]
+          }
+        }
+
+        if (jobData) {
+          this.job = jobData
 
           // 设置地图位置
           if (this.job.meeting_location) {
@@ -303,8 +323,16 @@ export default {
             }]
           }
 
-          // 加载剧组信息
-          if (this.job.publisher_id) {
+          // 设置剧组信息（如果从云对象获取则已包含）
+          if (this.job.publisher_info) {
+            this.crewInfo = {
+              nickname: this.job.publisher_info.nickname || '剧组',
+              avatar: this.job.publisher_info.avatar || '',
+              credit_score: this.job.publisher_info.credit_score || 100,
+              order_count: 0
+            }
+          } else if (this.job.publisher_id) {
+            // 向后兼容：单独加载剧组信息
             await this.loadCrewInfo(this.job.publisher_id)
           }
         }
@@ -321,23 +349,26 @@ export default {
 
     async loadCrewInfo(crewId) {
       try {
-        const db = uniCloud.database()
-        const res = await db.collection('uni-id-users').doc(crewId).field({
-          nickname: true,
-          avatar: true,
-          credit_score_crew: true
-        }).get()
+        const userCo = uniCloud.importObject('user-co')
+        const res = await userCo.getPublicProfile(crewId)
 
-        if (res.result.data && res.result.data.length > 0) {
-          const user = res.result.data[0]
+        if (res.code === 0 && res.data) {
           this.crewInfo = {
-            ...user,
-            credit_score: user.credit_score_crew || 100,
-            order_count: 0 // TODO: 统计发布订单数
+            nickname: res.data.nickname || '剧组',
+            avatar: res.data.avatar || '',
+            credit_score: res.data.credit_score_crew || 100,
+            order_count: res.data.order_count || 0
           }
         }
       } catch (error) {
         console.error('加载剧组信息失败:', error)
+        // 降级处理：使用默认值
+        this.crewInfo = {
+          nickname: '剧组',
+          avatar: '',
+          credit_score: 100,
+          order_count: 0
+        }
       }
     },
 
@@ -451,27 +482,63 @@ export default {
         this.isGrabbing = true
         this.$refs.grabPopup.close()
 
-        // TODO: 调用抢单接口
-        // const orderCo = uniCloud.importObject('order-co')
-        // const res = await orderCo.grab(this.jobId)
+        // 调用抢单接口
+        const orderCo = uniCloud.importObject('order-co')
+        const res = await orderCo.grab(this.jobId)
 
-        // 模拟抢单成功
-        await new Promise(resolve => setTimeout(resolve, 1000))
-
-        uni.showToast({
-          title: '抢单成功',
-          icon: 'success'
-        })
-
-        setTimeout(() => {
-          uni.navigateTo({
-            url: `/pages/actor/order_tracking?id=${this.jobId}`
+        if (res.code === 0) {
+          // 抢单成功
+          uni.showToast({
+            title: '抢单成功',
+            icon: 'success'
           })
-        }, 1500)
+
+          setTimeout(() => {
+            uni.navigateTo({
+              url: `/pages/actor/order_tracking?id=${this.jobId}`
+            })
+          }, 1500)
+        } else {
+          // 处理各种错误码
+          let errorMsg = res.message || '抢单失败'
+
+          switch (res.code) {
+            case 401:
+              errorMsg = '请先登录'
+              // 延迟跳转到登录页
+              setTimeout(() => {
+                uni.reLaunch({ url: '/pages/index/index' })
+              }, 1500)
+              break
+            case 403:
+              // 权限问题：未认证或非演员
+              errorMsg = res.message || '请先完成身份认证'
+              break
+            case 400:
+              // 业务逻辑错误：订单已被抢、不符合条件等
+              if (res.message.includes('已被')) {
+                errorMsg = '手慢了，订单已被其他人抢走'
+              } else if (res.message.includes('不符合')) {
+                errorMsg = res.message
+              } else if (res.message.includes('自己发布')) {
+                errorMsg = '不能接自己发布的订单'
+              }
+              break
+            case 404:
+              errorMsg = '订单不存在或已取消'
+              break
+          }
+
+          uni.showToast({
+            title: errorMsg,
+            icon: 'none',
+            duration: 2500
+          })
+        }
       } catch (error) {
         console.error('抢单失败:', error)
         uni.showToast({
-          title: error.message || '抢单失败',
+          title: '网络错误，请重试',
           icon: 'none'
         })
       } finally {

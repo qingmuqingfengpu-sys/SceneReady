@@ -12,6 +12,24 @@
 | community-co | 0 | 4 | 0% |
 | **总计** | **28** | **4** | **87.5%** |
 
+## 前端接口对接状态
+
+| 页面 | 调用接口 | 对接状态 |
+|------|----------|----------|
+| 演员首页 `actor/index.vue` | `order-co.getAvailableJobs()` | 已对接 |
+| 演员首页 | `user-co.getStats()` | 已对接 |
+| 演员首页 | `order-co.grab()` | 已对接 |
+| 工作详情 `actor/job_detail.vue` | `order-co.grab()` | 已对接 |
+| 工作详情 | `user-co.getPublicProfile()` | 已对接 |
+| 履约追踪 `actor/order_tracking.vue` | `order-co.getDetail()` | 已对接 |
+| 履约追踪 | `order-co.submitTrack()` | 已对接 |
+| 履约追踪 | `order-co.checkIn()` | 已对接 |
+| 履约追踪 | `user-co.getPublicProfile()` | 已对接 |
+| 演员订单 `actor/my_orders.vue` | `order-co.rateOrder()` | 已对接 |
+| 剧组首页 `crew/index.vue` | `order-co.getNearbyActors()` | 已对接 |
+| 剧组首页 | `user-co.getStats()` | 已对接 |
+| 剧组订单详情 `crew/order_detail.vue` | `order-co.rateOrder()` | 已对接 |
+
 ---
 
 ## 1. order-co 订单云对象
@@ -338,7 +356,24 @@ await uniCloud.callFunction({
 | 高德地图API | 已集成 | 地理编码服务 |
 | 微信支付 | 待集成 | P1优先级 |
 | 学信网API | 待集成 | P2优先级 |
-| uni-push | 待集成 | P2优先级 |
+| uni-push | 逻辑已备 | 推送筛选逻辑已实现，待集成推送服务 |
+
+## 推送通知说明
+
+`_notifyNearbyActors()` 方法已实现完整的筛选逻辑：
+
+1. **地理位置筛选**：5公里范围内的演员
+2. **信用分分级**：
+   - 高信用演员（>=130分）：优先推送
+   - 普通演员（90-129分）：延迟3分钟推送
+3. **推送内容**：包含地点、价格等关键信息
+4. **日志输出**：详细的推送日志便于调试
+
+集成 uni-push 后，取消注释以下代码即可启用：
+```javascript
+// await this._sendPush(topActorIds, pushPayload)
+// setTimeout(() => this._sendPush(normalActorIds, pushPayload), 3 * 60 * 1000)
+```
 
 ---
 

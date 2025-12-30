@@ -505,18 +505,47 @@ export default {
     },
 
     async submitRating() {
-      try {
-        // TODO: 调用评价接口
+      if (this.rating < 1) {
         uni.showToast({
-          title: '评价成功',
-          icon: 'success'
+          title: '请选择评分',
+          icon: 'none'
         })
-        this.order.is_rated = true
-        this.$refs.ratePopup.close()
+        return
+      }
+
+      uni.showLoading({ title: '提交中...', mask: true })
+
+      try {
+        const orderCo = uniCloud.importObject('order-co')
+        const res = await orderCo.rateOrder(this.orderId, {
+          score: this.rating,
+          comment: this.rateComment || ''
+        })
+
+        uni.hideLoading()
+
+        if (res.code === 0) {
+          uni.showToast({
+            title: '评价成功',
+            icon: 'success'
+          })
+          this.order.is_rated = true
+          this.order.publisher_rating = {
+            score: this.rating,
+            comment: this.rateComment
+          }
+          this.$refs.ratePopup.close()
+        } else {
+          uni.showToast({
+            title: res.message || '评价失败',
+            icon: 'none'
+          })
+        }
       } catch (error) {
+        uni.hideLoading()
         console.error('提交评价失败:', error)
         uni.showToast({
-          title: '评价失败',
+          title: '网络错误，请重试',
           icon: 'none'
         })
       }

@@ -236,30 +236,153 @@ module.exports = {
    */
   async _notifyNearbyActors(orderId, orderData) {
     try {
-      // 查找附近5km内的已认证高信用演员
-      const actorsRes = await db.collection('uni-id-users')
-        .where({
-          user_role: 2, // 演员
-          auth_status: 2, // 已认证
-          credit_score_actor: dbCmd.gte(100) // 信用分>=100
-        })
-        .field({
-          _id: true,
-          credit_score_actor: true
-        })
-        .get()
+      const NOTIFY_RADIUS = 5000 // 5公里范围
+      const TOP_ACTOR_THRESHOLD = 130 // 高信用演员阈值
 
-      if (actorsRes.data && actorsRes.data.length > 0) {
-        // TODO: 实现推送逻辑
-        // 1. Top 20%演员提前3-5分钟推送
-        // 2. 普通演员正常推送
-        // 3. 可使用uni-push或第三方推送服务
-        console.log(`订单 ${orderId} 已通知 ${actorsRes.data.length} 名演员`)
+      // 获取订单集合地点
+      const orderLocation = orderData.meeting_location
+      if (!orderLocation || !orderLocation.coordinates) {
+        console.log('[Notify] 订单无位置信息，跳过推送')
+        return
+      }
+
+      const [longitude, latitude] = orderLocation.coordinates
+
+      // 1. 基于地理位置筛选附近演员
+      // 使用 GeoNear 聚合查询（如果数据库支持）
+      // 否则退化为全量筛选
+      let nearbyActors = []
+
+      try {
+        // 尝试使用地理位置查询
+        const geoRes = await db.collection('uni-id-users')
+          .aggregate()
+          .geoNear({
+            near: {
+              type: 'Point',
+              coordinates: [longitude, latitude]
+            },
+            distanceField: 'distance',
+            maxDistance: NOTIFY_RADIUS,
+            spherical: true,
+            query: {
+              user_role: 2,
+              credit_score_actor: dbCmd.gte(90)
+            }
+          })
+          .project({
+            _id: 1,
+            nickname: 1,
+            credit_score_actor: 1,
+            push_client_id: 1,
+            distance: 1
+          })
+          .limit(100)
+          .end()
+
+        nearbyActors = geoRes.data || []
+        console.log(`[Notify] GeoNear查询到 ${nearbyActors.length} 名附近演员`)
+      } catch (geoError) {
+        // GeoNear不可用，使用普通查询
+        console.log('[Notify] GeoNear不可用，使用普通查询:', geoError.message)
+
+        const actorsRes = await db.collection('uni-id-users')
+          .where({
+            user_role: 2,
+            credit_score_actor: dbCmd.gte(90)
+          })
+          .field({
+            _id: true,
+            nickname: true,
+            credit_score_actor: true,
+            push_client_id: true,
+            location: true
+          })
+          .limit(200)
+          .get()
+
+        // 手动计算距离并筛选
+        nearbyActors = (actorsRes.data || []).filter(actor => {
+          if (!actor.location || !actor.location.coordinates) return false
+          const [actorLng, actorLat] = actor.location.coordinates
+          const dist = this._calculateDistance(latitude, longitude, actorLat, actorLng)
+          actor.distance = dist
+          return dist <= NOTIFY_RADIUS
+        })
+
+        console.log(`[Notify] 普通查询筛选出 ${nearbyActors.length} 名附近演员`)
+      }
+
+      if (nearbyActors.length === 0) {
+        console.log('[Notify] 附近无可通知演员')
+        return
+      }
+
+      // 2. 按信用分分组（高信用演员优先推送）
+      const topActors = nearbyActors.filter(a => a.credit_score_actor >= TOP_ACTOR_THRESHOLD)
+      const normalActors = nearbyActors.filter(a => a.credit_score_actor < TOP_ACTOR_THRESHOLD)
+
+      // 3. 构建推送消息
+      const priceYuan = (orderData.price_amount / 100).toFixed(0)
+      const pushPayload = {
+        title: '新订单通知',
+        content: `${orderData.meeting_location_name} | ${priceYuan}元/${orderData.price_type === 'daily' ? '天' : '时'}`,
+        payload: {
+          type: 'new_order',
+          order_id: orderId,
+          order_type: orderData.order_type
+        }
+      }
+
+      // 4. 记录推送日志（为后续推送服务集成做准备）
+      console.log('[Notify] ========== 推送通知详情 ==========')
+      console.log(`[Notify] 订单ID: ${orderId}`)
+      console.log(`[Notify] 订单位置: ${orderData.meeting_location_name} (${longitude}, ${latitude})`)
+      console.log(`[Notify] 高信用演员(>=130分): ${topActors.length} 人`)
+      console.log(`[Notify] 普通演员: ${normalActors.length} 人`)
+      console.log(`[Notify] 推送内容: ${pushPayload.content}`)
+
+      // 提取推送目标用户ID列表
+      const topActorIds = topActors.map(a => a._id)
+      const normalActorIds = normalActors.map(a => a._id)
+
+      console.log(`[Notify] 高信用演员IDs: ${topActorIds.slice(0, 5).join(', ')}${topActorIds.length > 5 ? '...' : ''}`)
+      console.log(`[Notify] 普通演员IDs: ${normalActorIds.slice(0, 5).join(', ')}${normalActorIds.length > 5 ? '...' : ''}`)
+      console.log('[Notify] =====================================')
+
+      // 5. TODO: 调用 uni-push 发送推送
+      // 高信用演员立即推送
+      // await this._sendPush(topActorIds, pushPayload)
+      // 普通演员延迟3分钟推送
+      // setTimeout(() => this._sendPush(normalActorIds, pushPayload), 3 * 60 * 1000)
+
+      // 返回统计信息（供调试）
+      return {
+        total: nearbyActors.length,
+        top_actors: topActors.length,
+        normal_actors: normalActors.length,
+        top_actor_ids: topActorIds,
+        normal_actor_ids: normalActorIds
       }
 
     } catch (error) {
-      console.error('推送通知失败:', error)
+      console.error('[Notify] 推送通知失败:', error)
     }
+  },
+
+  /**
+   * 计算两点间距离（米）
+   * @private
+   */
+  _calculateDistance(lat1, lng1, lat2, lng2) {
+    const R = 6371000
+    const dLat = (lat2 - lat1) * Math.PI / 180
+    const dLng = (lng2 - lng1) * Math.PI / 180
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLng / 2) * Math.sin(dLng / 2)
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return R * c
   },
 
   /**

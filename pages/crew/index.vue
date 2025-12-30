@@ -333,6 +333,13 @@ export default {
       // 演员数据
       nearbyActors: [],
       selectedActor: null,
+      actorsLoading: false,
+
+      // 用户位置
+      userLocation: {
+        longitude: null,
+        latitude: null
+      },
 
       // 原有数据
       userInfo: {},
@@ -377,8 +384,7 @@ export default {
     this.loadUserInfo()
     this.loadStats()
     this.loadRecentOrders()
-    this.getMyLocation()
-    this.loadNearbyActors()
+    this.getMyLocation()  // 会在成功后自动调用 loadNearbyActors
   },
 
   onPullDownRefresh() {
@@ -399,6 +405,12 @@ export default {
         success: (res) => {
           this.mapCenter.latitude = res.latitude
           this.mapCenter.longitude = res.longitude
+          this.userLocation = {
+            longitude: res.longitude,
+            latitude: res.latitude
+          }
+          // 位置获取成功后加载附近演员
+          this.loadNearbyActors()
         },
         fail: (err) => {
           console.error('获取位置失败:', err)
@@ -406,6 +418,12 @@ export default {
             title: '定位失败，使用默认位置',
             icon: 'none'
           })
+          // 使用默认位置也尝试加载
+          this.userLocation = {
+            longitude: this.mapCenter.longitude,
+            latitude: this.mapCenter.latitude
+          }
+          this.loadNearbyActors()
         }
       })
     },
@@ -432,56 +450,113 @@ export default {
       }
     },
 
-    // 加载附近演员（模拟数据）
-    loadNearbyActors() {
-      // TODO: 调用后端接口获取附近演员
-      // 这里使用模拟数据
-      const mockActors = [
-        {
-          id: 1,
-          nickname: '张三',
-          avatar: '/static/avatar1.png',
-          height: 175,
-          gender: 1,
-          bodyType: '标准',
-          credit_score: 135,
-          distance: 0.5,
-          skills: ['开车', '跳舞'],
-          latitude: 29.5640,
-          longitude: 106.4660,
-          videoCard: ''  // 视频模卡URL
-        },
-        {
-          id: 2,
-          nickname: '李四',
-          avatar: '/static/avatar2.png',
-          height: 168,
-          gender: 2,
-          bodyType: '偏瘦',
-          credit_score: 120,
-          distance: 1.2,
-          skills: ['唱歌', '游泳'],
-          latitude: 29.5620,
-          longitude: 106.4640,
-          videoCard: ''
-        }
-      ]
+    // 加载附近演员
+    async loadNearbyActors() {
+      if (!this.userLocation.longitude || !this.userLocation.latitude) {
+        console.log('位置信息不可用，跳过加载演员')
+        return
+      }
 
-      this.nearbyActors = mockActors
+      if (this.actorsLoading) return
+      this.actorsLoading = true
 
-      // 生成地图标记点
-      this.actorMarkers = mockActors.map(actor => ({
-        id: actor.id,
-        latitude: actor.latitude,
-        longitude: actor.longitude,
-        iconPath: actor.avatar || '/static/default-avatar.png',
-        width: 40,
-        height: 40,
-        customCallout: {
-          anchorY: 0,
-          display: 'ALWAYS'
+      try {
+        const orderCo = uniCloud.importObject('order-co')
+
+        // 构建查询参数
+        const params = {
+          longitude: this.userLocation.longitude,
+          latitude: this.userLocation.latitude,
+          maxDistance: 5000  // 5公里范围
         }
-      }))
+
+        // 添加筛选条件
+        if (this.filters.gender > 0) {
+          params.gender = this.filters.gender
+        }
+        if (this.filters.heightMin) {
+          params.heightMin = parseInt(this.filters.heightMin)
+        }
+        if (this.filters.heightMax) {
+          params.heightMax = parseInt(this.filters.heightMax)
+        }
+        if (this.filters.skills && this.filters.skills.length > 0) {
+          params.skills = this.filters.skills
+        }
+
+        const res = await orderCo.getNearbyActors(params)
+
+        if (res.code === 0 && res.data) {
+          // 技能标签映射
+          const skillLabelMap = {
+            'driving': '开车',
+            'dancing': '跳舞',
+            'singing': '唱歌',
+            'martial_arts': '武术',
+            'swimming': '游泳',
+            'riding': '骑马',
+            'instrument': '乐器',
+            'language': '外语'
+          }
+
+          // 体型映射
+          const bodyTypeMap = {
+            'slim': '偏瘦',
+            'standard': '标准',
+            'athletic': '健壮',
+            'plump': '偏胖'
+          }
+
+          // 转换数据格式
+          this.nearbyActors = res.data.map((actor, index) => ({
+            id: actor._id || index + 1,
+            _id: actor._id,
+            nickname: actor.nickname || '演员',
+            avatar: actor.avatar || '/static/default-avatar.png',
+            height: actor.height || 170,
+            gender: actor.gender || 0,
+            bodyType: bodyTypeMap[actor.body_type] || actor.body_type || '标准',
+            credit_score: actor.credit_score_actor || 100,
+            distance: actor.distance_km ? parseFloat(actor.distance_km).toFixed(1) : '-',
+            skills: (actor.skills || []).map(s => skillLabelMap[s] || s),
+            latitude: actor.location ? actor.location.coordinates[1] : this.mapCenter.latitude + (Math.random() - 0.5) * 0.01,
+            longitude: actor.location ? actor.location.coordinates[0] : this.mapCenter.longitude + (Math.random() - 0.5) * 0.01,
+            videoCard: actor.video_card || ''
+          }))
+
+          // 生成地图标记点
+          this.actorMarkers = this.nearbyActors.map(actor => ({
+            id: actor.id,
+            latitude: actor.latitude,
+            longitude: actor.longitude,
+            iconPath: actor.avatar || '/static/default-avatar.png',
+            width: 40,
+            height: 40,
+            anchor: { x: 0.5, y: 0.5 },
+            callout: {
+              content: `${actor.nickname} ${actor.height}cm`,
+              display: 'BYCLICK',
+              bgColor: '#1E1E1E',
+              color: '#FFD700',
+              fontSize: 12,
+              borderRadius: 8,
+              padding: 6
+            }
+          }))
+
+          console.log(`加载到 ${this.nearbyActors.length} 个附近演员`)
+        } else {
+          console.warn('获取附近演员失败:', res.message)
+          this.nearbyActors = []
+          this.actorMarkers = []
+        }
+      } catch (error) {
+        console.error('加载附近演员失败:', error)
+        this.nearbyActors = []
+        this.actorMarkers = []
+      } finally {
+        this.actorsLoading = false
+      }
     },
 
     // 显示演员详情
@@ -632,25 +707,21 @@ export default {
           return
         }
 
-        const db = uniCloud.database()
-        const userInfo = await uniCloud.getCurrentUserInfo()
-        const userId = userInfo.uid
+        const userCo = uniCloud.importObject('user-co')
+        const res = await userCo.getStats()
 
-        if (!userId) {
-          console.log('loadStats: 无法获取userId')
-          return
-        }
-
-        const [pendingRes, ongoingRes, completedRes] = await Promise.all([
-          db.collection('orders').where({ publisher_id: userId, order_status: 0 }).count(),
-          db.collection('orders').where({ publisher_id: userId, order_status: 1 }).count(),
-          db.collection('orders').where({ publisher_id: userId, order_status: 3 }).count()
-        ])
-
-        this.stats = {
-          pending: pendingRes.total,
-          ongoing: ongoingRes.total,
-          completed: completedRes.total
+        if (res.code === 0 && res.data) {
+          this.stats = {
+            pending: res.data.pending || 0,
+            ongoing: res.data.in_progress || 0,
+            completed: res.data.completed || 0
+          }
+          // 更新用户信用分
+          if (res.data.credit_score) {
+            this.userInfo.credit_score_crew = res.data.credit_score
+          }
+        } else {
+          console.warn('获取统计数据失败:', res.message)
         }
       } catch (error) {
         console.error('加载统计失败:', error)

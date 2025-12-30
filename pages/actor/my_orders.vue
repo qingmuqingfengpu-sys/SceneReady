@@ -96,6 +96,42 @@
         :content-text="loadMoreText"
       ></uni-load-more>
     </scroll-view>
+
+    <!-- 评价弹窗 -->
+    <uni-popup ref="ratePopup" type="bottom">
+      <view class="rate-popup">
+        <view class="rate-header">
+          <text class="rate-title">评价订单</text>
+          <view class="rate-close" @tap="closeRatePopup">
+            <uni-icons type="close" size="24" color="#fff"></uni-icons>
+          </view>
+        </view>
+        <view class="rate-content">
+          <view class="rate-item">
+            <text class="rate-label">整体评分</text>
+            <view class="star-rating">
+              <view
+                v-for="i in 5"
+                :key="i"
+                class="star-item"
+                @tap="setRating(i)"
+              >
+                <uni-icons
+                  :type="i <= rating ? 'star-filled' : 'star'"
+                  size="32"
+                  :color="i <= rating ? '#FFD700' : '#666'"
+                ></uni-icons>
+              </view>
+            </view>
+          </view>
+          <view class="rate-item">
+            <text class="rate-label">评价内容（选填）</text>
+            <textarea class="rate-textarea" v-model="rateComment" placeholder="请输入您对剧组的评价..." maxlength="200"></textarea>
+          </view>
+          <button class="btn-primary rate-submit" @tap="submitRating">提交评价</button>
+        </view>
+      </view>
+    </uni-popup>
   </view>
 </template>
 
@@ -129,7 +165,11 @@ export default {
         2: 'payment',
         3: 'completed',
         4: 'canceled'
-      }
+      },
+      // 评价相关
+      rating: 5,
+      rateComment: '',
+      ratingOrderId: ''
     }
   },
 
@@ -335,9 +375,65 @@ export default {
     },
 
     rateOrder(order) {
-      uni.navigateTo({
-        url: `/pages/actor/job_detail?id=${order._id}&action=rate`
-      })
+      this.ratingOrderId = order._id
+      this.rating = 5
+      this.rateComment = ''
+      this.$refs.ratePopup.open()
+    },
+
+    closeRatePopup() {
+      this.$refs.ratePopup.close()
+    },
+
+    setRating(value) {
+      this.rating = value
+    },
+
+    async submitRating() {
+      if (this.rating < 1) {
+        uni.showToast({
+          title: '请选择评分',
+          icon: 'none'
+        })
+        return
+      }
+
+      uni.showLoading({ title: '提交中...', mask: true })
+
+      try {
+        const orderCo = uniCloud.importObject('order-co')
+        const res = await orderCo.rateOrder(this.ratingOrderId, {
+          score: this.rating,
+          comment: this.rateComment || ''
+        })
+
+        uni.hideLoading()
+
+        if (res.code === 0) {
+          uni.showToast({
+            title: '评价成功',
+            icon: 'success'
+          })
+          // 更新本地订单的评价状态
+          const order = this.orderList.find(o => o._id === this.ratingOrderId)
+          if (order) {
+            order.is_rated = true
+          }
+          this.$refs.ratePopup.close()
+        } else {
+          uni.showToast({
+            title: res.message || '评价失败',
+            icon: 'none'
+          })
+        }
+      } catch (error) {
+        uni.hideLoading()
+        console.error('提交评价失败:', error)
+        uni.showToast({
+          title: '网络错误，请重试',
+          icon: 'none'
+        })
+      }
     },
 
     viewDetail(order) {
@@ -569,6 +665,72 @@ export default {
 
   .btn-primary {
     @include button-primary;
+    margin-top: $spacing-base;
+  }
+}
+
+// 评价弹窗
+.rate-popup {
+  background-color: $bg-secondary;
+  border-radius: $border-radius-lg $border-radius-lg 0 0;
+  padding-bottom: env(safe-area-inset-bottom);
+
+  .rate-header {
+    position: relative;
+    padding: $spacing-lg;
+    background: linear-gradient(135deg, $primary-color 0%, #FFED4E 100%);
+    text-align: center;
+
+    .rate-title {
+      font-size: $font-size-xl;
+      font-weight: $font-weight-bold;
+      color: $black;
+    }
+
+    .rate-close {
+      position: absolute;
+      right: $spacing-lg;
+      top: $spacing-lg;
+    }
+  }
+
+  .rate-content {
+    padding: $spacing-lg;
+  }
+
+  .rate-item {
+    margin-bottom: $spacing-lg;
+
+    .rate-label {
+      display: block;
+      font-size: $font-size-base;
+      color: $text-secondary;
+      margin-bottom: $spacing-sm;
+    }
+  }
+
+  .star-rating {
+    display: flex;
+    gap: $spacing-sm;
+
+    .star-item {
+      padding: $spacing-xs;
+    }
+  }
+
+  .rate-textarea {
+    width: 100%;
+    height: 200rpx;
+    padding: $spacing-base;
+    background-color: $bg-tertiary;
+    border-radius: $border-radius-base;
+    color: $text-primary;
+    font-size: $font-size-base;
+  }
+
+  .rate-submit {
+    @include button-primary;
+    width: 100%;
     margin-top: $spacing-base;
   }
 }

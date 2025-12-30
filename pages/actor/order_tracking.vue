@@ -115,7 +115,8 @@
       <!-- 操作按钮 -->
       <view class="bottom-actions">
         <button class="btn-secondary" @tap="reportIssue">遇到问题</button>
-        <button class="btn-primary" @tap="completeWork" v-if="isCheckedIn && !isCompleted">完成工作</button>
+        <button class="btn-primary" @tap="completeWork" v-if="isCheckedIn && !isCompleted">请求完工</button>
+        <button class="btn-primary completed" @tap="viewDetail" v-else-if="isCompleted">已完成 - 查看详情</button>
         <button class="btn-primary" @tap="viewDetail" v-else>查看详情</button>
       </view>
     </view>
@@ -165,11 +166,12 @@ export default {
   methods: {
     async loadOrderInfo() {
       try {
-        const db = uniCloud.database()
-        const res = await db.collection('orders').doc(this.orderId).get()
+        // 使用云对象获取订单详情
+        const orderCo = uniCloud.importObject('order-co')
+        const res = await orderCo.getDetail(this.orderId)
 
-        if (res.result.data && res.result.data.length > 0) {
-          this.order = res.result.data[0]
+        if (res.code === 0 && res.data) {
+          this.order = res.data
 
           // 设置集合地点
           if (this.order.meeting_location) {
@@ -180,34 +182,46 @@ export default {
             this.updateMapElements()
           }
 
-          // 检查打卡状态
-          this.isCheckedIn = this.order.actor_checked_in || false
-          this.checkinTime = this.order.checkin_time
+          // 检查打卡状态（arrive_time 表示已打卡）
+          this.isCheckedIn = !!this.order.arrive_time
+          this.checkinTime = this.order.arrive_time
+
+          // 检查订单完成状态
+          this.isCompleted = this.order.order_status === 3
 
           // 加载剧组信息
           if (this.order.publisher_id) {
             await this.loadCrewInfo(this.order.publisher_id)
           }
+        } else if (res.code === 401) {
+          uni.showToast({ title: '请先登录', icon: 'none' })
+          setTimeout(() => {
+            uni.reLaunch({ url: '/pages/index/index' })
+          }, 1500)
+        } else {
+          uni.showToast({ title: res.message || '加载失败', icon: 'none' })
         }
       } catch (error) {
         console.error('加载订单信息失败:', error)
+        uni.showToast({ title: '网络错误', icon: 'none' })
       }
     },
 
     async loadCrewInfo(crewId) {
       try {
-        const db = uniCloud.database()
-        const res = await db.collection('uni-id-users').doc(crewId).field({
-          nickname: true,
-          avatar: true,
-          mobile: true
-        }).get()
+        const userCo = uniCloud.importObject('user-co')
+        const res = await userCo.getPublicProfile(crewId)
 
-        if (res.result.data && res.result.data.length > 0) {
-          this.crewInfo = res.result.data[0]
+        if (res.code === 0 && res.data) {
+          this.crewInfo = {
+            nickname: res.data.nickname || '剧组',
+            avatar: res.data.avatar || '',
+            mobile: res.data.mobile || ''
+          }
         }
       } catch (error) {
         console.error('加载剧组信息失败:', error)
+        this.crewInfo = { nickname: '剧组', avatar: '', mobile: '' }
       }
     },
 
@@ -345,13 +359,24 @@ export default {
     },
 
     async submitTrack() {
-      if (!this.myLocation) return
+      if (!this.myLocation || this.isCompleted) return
 
       try {
-        // TODO: 调用轨迹上报接口
-        // const orderCo = uniCloud.importObject('order-co')
-        // await orderCo.submitTrack(this.orderId, this.myLocation)
-        console.log('上报位置:', this.myLocation)
+        const orderCo = uniCloud.importObject('order-co')
+        const res = await orderCo.submitTrack(this.orderId, {
+          longitude: this.myLocation.longitude,
+          latitude: this.myLocation.latitude
+        })
+
+        if (res.code === 0) {
+          console.log('轨迹上报成功:', res.data)
+          // 如果进入围栏范围，更新可打卡状态
+          if (res.data && res.data.in_fence) {
+            this.canCheckIn = true
+          }
+        } else {
+          console.warn('轨迹上报失败:', res.message)
+        }
       } catch (error) {
         console.error('上报轨迹失败:', error)
       }
@@ -360,35 +385,71 @@ export default {
     async checkIn() {
       if (!this.canCheckIn) {
         uni.showToast({
-          title: '请先到达集合地点',
+          title: '请先到达集合地点（100米范围内）',
           icon: 'none'
         })
         return
       }
 
+      if (!this.myLocation) {
+        uni.showToast({
+          title: '正在获取位置，请稍后',
+          icon: 'none'
+        })
+        this.getMyLocation()
+        return
+      }
+
       try {
-        uni.showLoading({ title: '打卡中...' })
+        uni.showLoading({ title: '打卡中...', mask: true })
 
-        // TODO: 调用打卡接口
-        // const orderCo = uniCloud.importObject('order-co')
-        // await orderCo.checkIn(this.orderId, this.myLocation)
-
-        // 模拟打卡成功
-        await new Promise(resolve => setTimeout(resolve, 1000))
-
-        this.isCheckedIn = true
-        this.checkinTime = Date.now()
+        const orderCo = uniCloud.importObject('order-co')
+        const res = await orderCo.checkIn(this.orderId, {
+          longitude: this.myLocation.longitude,
+          latitude: this.myLocation.latitude
+        })
 
         uni.hideLoading()
-        uni.showToast({
-          title: '打卡成功',
-          icon: 'success'
-        })
+
+        if (res.code === 0) {
+          this.isCheckedIn = true
+          this.checkinTime = res.data.arrive_time || Date.now()
+
+          // 显示打卡结果
+          let message = '打卡成功'
+          if (res.data.is_late) {
+            message = `打卡成功，迟到${res.data.late_minutes}分钟`
+          }
+
+          uni.showToast({
+            title: message,
+            icon: 'success',
+            duration: 2000
+          })
+
+          // 更新状态显示
+          this.statusText = '已签到'
+          this.distanceText = '工作进行中'
+        } else {
+          // 处理打卡失败
+          let errorMsg = res.message || '打卡失败'
+
+          if (res.code === 400 && res.data) {
+            // 距离太远
+            errorMsg = `距离集合点还有${res.data.distance}米，请靠近后再打卡`
+          }
+
+          uni.showToast({
+            title: errorMsg,
+            icon: 'none',
+            duration: 2500
+          })
+        }
       } catch (error) {
         uni.hideLoading()
         console.error('打卡失败:', error)
         uni.showToast({
-          title: error.message || '打卡失败',
+          title: '网络错误，请重试',
           icon: 'none'
         })
       }
@@ -471,17 +532,25 @@ export default {
     },
 
     async completeWork() {
+      // 演员端提示：订单完成需要剧组确认
       uni.showModal({
-        title: '完成工作',
-        content: '确认本次工作已完成？',
-        success: async (res) => {
+        title: '请求完工确认',
+        content: '工作完成后，请联系剧组进行完工确认。\n\n完工后您将获得报酬和信用分奖励。',
+        confirmText: '联系剧组',
+        cancelText: '稍后再说',
+        success: (res) => {
           if (res.confirm) {
-            // TODO: 调用完成工作接口
-            this.isCompleted = true
-            uni.showToast({
-              title: '已提交完成',
-              icon: 'success'
-            })
+            // 跳转联系剧组
+            if (this.crewInfo.mobile) {
+              uni.makePhoneCall({
+                phoneNumber: this.crewInfo.mobile
+              })
+            } else {
+              uni.showToast({
+                title: '暂无联系方式，请在消息中联系',
+                icon: 'none'
+              })
+            }
           }
         }
       })
@@ -780,6 +849,10 @@ export default {
 
   .btn-primary {
     @include button-primary;
+
+    &.completed {
+      background: linear-gradient(135deg, #4CAF50 0%, #81C784 100%);
+    }
   }
 
   .btn-secondary {

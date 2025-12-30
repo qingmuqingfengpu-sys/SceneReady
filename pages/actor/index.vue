@@ -45,7 +45,13 @@
 
     <!-- 订单列表 -->
     <scroll-view scroll-y class="order-list-container" @scrolltolower="loadMore" :refresher-enabled="true" :refresher-triggered="refreshing" @refresherrefresh="onRefresh">
-      <view v-if="jobList.length > 0" class="job-list">
+      <!-- 首次加载状态 -->
+      <view v-if="loading && jobList.length === 0" class="loading-state">
+        <view class="loading-spinner"></view>
+        <text class="loading-text">加载中...</text>
+      </view>
+
+      <view v-else-if="jobList.length > 0" class="job-list">
         <view
           v-for="job in jobList"
           :key="job._id"
@@ -64,7 +70,7 @@
           <view class="job-middle">
             <view class="job-header">
               <text class="job-title">{{ job.role_description || '群众演员' }}</text>
-              <text class="job-distance">{{ job.distance }}km</text>
+              <text v-if="job.distance" class="job-distance">{{ job.distance }}km</text>
             </view>
 
             <view class="job-info-row">
@@ -108,10 +114,10 @@
       </view>
 
       <!-- 空状态 -->
-      <view v-else class="empty-state">
+      <view v-else-if="!loading" class="empty-state">
         <uni-icons type="info-filled" size="64" color="#666"></uni-icons>
         <text class="empty-text">暂无可接订单</text>
-        <text class="empty-hint">试试调整筛选条件</text>
+        <text class="empty-hint">试试调整筛选条件或稍后再来</text>
       </view>
 
       <!-- 加载更多 -->
@@ -243,6 +249,14 @@ export default {
       pageSize: 10,
       hasMore: true,
       refreshing: false,
+      loading: false,
+      statsLoading: false,
+
+      // 用户位置
+      userLocation: {
+        longitude: null,
+        latitude: null
+      },
 
       // 用户信息
       userInfo: {}
@@ -257,6 +271,9 @@ export default {
 
     // 等待一下确保token完全生效
     await new Promise(resolve => setTimeout(resolve, 300))
+
+    // 获取用户位置
+    this.getUserLocation()
 
     this.loadUserInfo()
     this.loadStats()
@@ -339,16 +356,31 @@ export default {
     },
 
     async loadStats() {
+      this.statsLoading = true
       try {
-        // TODO: 调用后端接口获取统计数据
-        // 这里使用模拟数据
-        this.stats = {
-          available: 23,
-          ongoing: 1,
-          earned: 1560
+        const userCo = uniCloud.importObject('user-co')
+        const res = await userCo.getStats()
+
+        if (res.code === 0 && res.data) {
+          this.stats = {
+            available: res.data.available_jobs || 0,
+            ongoing: res.data.in_progress || 0,
+            earned: parseFloat(res.data.total_income) || 0
+          }
+        } else {
+          console.error('获取统计数据失败:', res.message)
+          // 显示默认值
+          this.stats = { available: 0, ongoing: 0, earned: 0 }
         }
       } catch (error) {
         console.error('加载统计失败:', error)
+        uni.showToast({
+          title: '统计数据加载失败',
+          icon: 'none'
+        })
+        this.stats = { available: 0, ongoing: 0, earned: 0 }
+      } finally {
+        this.statsLoading = false
       }
     },
 
@@ -359,68 +391,99 @@ export default {
         this.jobList = []
       }
 
-      try {
-        // TODO: 调用后端接口获取订单列表
-        // 这里使用模拟数据
-        const mockJobs = [
-          {
-            _id: '1',
-            crew_avatar: '/static/crew1.png',
-            crew_credit: 135,
-            role_description: '路人甲',
-            distance: 1.2,
-            meeting_location_name: '重庆大学虎溪校区',
-            meeting_time: Date.now() + 2 * 60 * 60 * 1000,
-            people_needed: 3,
-            welfare_tags: ['meal', 'taxi', 'tea'],
-            price_amount: 15000,
-            price_type: 'daily',
-            order_type: 'reservation'
-          },
-          {
-            _id: '2',
-            crew_avatar: '/static/crew2.png',
-            crew_credit: 120,
-            role_description: '群众演员',
-            distance: 0.8,
-            meeting_location_name: '观音桥步行街',
-            meeting_time: Date.now() + 1 * 60 * 60 * 1000,
-            people_needed: 5,
-            welfare_tags: ['meal', 'taxi'],
-            price_amount: 20000,
-            price_type: 'daily',
-            order_type: 'immediate'
-          },
-          {
-            _id: '3',
-            crew_avatar: '/static/crew3.png',
-            crew_credit: 110,
-            role_description: '服务员',
-            distance: 2.5,
-            meeting_location_name: '解放碑商圈',
-            meeting_time: Date.now() + 24 * 60 * 60 * 1000,
-            people_needed: 2,
-            welfare_tags: ['meal'],
-            price_amount: 12000,
-            price_type: 'daily',
-            order_type: 'reservation'
-          }
-        ]
+      if (this.loading) return
+      this.loading = true
 
-        if (reset) {
-          this.jobList = mockJobs
-        } else {
-          this.jobList.push(...mockJobs)
+      try {
+        const orderCo = uniCloud.importObject('order-co')
+
+        // 构建查询参数
+        const params = {
+          page: this.page,
+          pageSize: this.pageSize
         }
 
-        this.page++
-        this.hasMore = mockJobs.length === this.pageSize
+        // 添加位置信息（如果有）
+        if (this.userLocation.longitude && this.userLocation.latitude) {
+          params.longitude = this.userLocation.longitude
+          params.latitude = this.userLocation.latitude
+        }
+
+        // 根据筛选条件添加参数
+        if (this.selectedFilter === 'nearby' && this.userLocation.longitude) {
+          params.maxDistance = 3000 // 3km
+        } else if (this.selectedFilter === 'high_price') {
+          params.minPrice = 150 // 150元以上
+        } else if (this.selectedFilter === 'today') {
+          params.dateFilter = 'today'
+        } else if (this.selectedFilter === 'immediate') {
+          params.orderType = 'immediate'
+        }
+
+        // 高级筛选条件
+        if (this.filters.distance > 0) {
+          const distanceMap = { 1: 3000, 2: 5000, 3: 10000 }
+          params.maxDistance = distanceMap[this.filters.distance]
+        }
+        if (this.filters.price > 0) {
+          const priceMap = {
+            1: { max: 100 },
+            2: { min: 100, max: 200 },
+            3: { min: 200 }
+          }
+          if (priceMap[this.filters.price].min) params.minPrice = priceMap[this.filters.price].min
+          if (priceMap[this.filters.price].max) params.maxPrice = priceMap[this.filters.price].max
+        }
+        if (this.filters.welfare && this.filters.welfare.length > 0) {
+          params.welfare = this.filters.welfare
+        }
+
+        const res = await orderCo.getAvailableJobs(params)
+
+        if (res.code === 0 && res.data) {
+          // 转换数据格式以适配前端显示
+          const jobs = res.data.list.map(job => ({
+            _id: job._id,
+            crew_avatar: job.publisher_info?.avatar || '/static/default-crew.png',
+            crew_credit: job.publisher_info?.credit_score || 100,
+            role_description: job.role_description || '群众演员',
+            distance: job.distance_km ? parseFloat(job.distance_km) : null,
+            meeting_location_name: job.meeting_location_name,
+            meeting_time: job.meeting_time,
+            people_needed: job.people_needed,
+            welfare_tags: job.welfare_tags || [],
+            price_amount: job.price_amount,
+            price_type: job.price_type,
+            order_type: job.order_type
+          }))
+
+          if (reset) {
+            this.jobList = jobs
+          } else {
+            this.jobList.push(...jobs)
+          }
+
+          this.page++
+          this.hasMore = jobs.length === this.pageSize
+        } else {
+          console.error('获取订单列表失败:', res.message)
+          if (reset) {
+            this.jobList = []
+          }
+          this.hasMore = false
+          if (res.code === 401) {
+            uni.showToast({ title: '请先登录', icon: 'none' })
+          }
+        }
       } catch (error) {
         console.error('加载订单失败:', error)
         uni.showToast({
-          title: '加载失败',
+          title: '网络错误，请重试',
           icon: 'none'
         })
+        this.hasMore = false
+      } finally {
+        this.loading = false
       }
     },
 
@@ -463,15 +526,37 @@ export default {
       this.loadJobs(true)
     },
 
+    // ========== 获取用户位置 ==========
+    getUserLocation() {
+      uni.getLocation({
+        type: 'gcj02',
+        success: (res) => {
+          this.userLocation = {
+            longitude: res.longitude,
+            latitude: res.latitude
+          }
+          console.log('获取位置成功:', this.userLocation)
+        },
+        fail: (err) => {
+          console.warn('获取位置失败:', err)
+          // 位置获取失败不阻塞页面加载，只是无法使用距离排序
+        }
+      })
+    },
+
     // ========== 列表操作 ==========
-    onRefresh() {
+    async onRefresh() {
       this.refreshing = true
-      this.loadJobs(true)
-      this.loadStats()
-      setTimeout(() => {
+      try {
+        // 并行加载数据
+        await Promise.all([
+          this.loadJobs(true),
+          this.loadStats()
+        ])
+      } finally {
         this.refreshing = false
         uni.stopPullDownRefresh()
-      }, 1000)
+      }
     },
 
     loadMore() {
@@ -494,26 +579,84 @@ export default {
     },
 
     async grabOrder(job) {
-      // 防止事件冒泡
+      // 显示确认弹窗
       uni.showModal({
         title: '确认抢单',
-        content: `确定要抢【${job.role_description || '群众演员'}】的单吗？`,
-        success: (res) => {
-          if (res.confirm) {
-            // TODO: 调用后端接口抢单
-            uni.showToast({
-              title: '抢单成功！',
-              icon: 'success'
-            })
-            // 跳转到订单详情或我的订单
-            setTimeout(() => {
-              uni.navigateTo({
-                url: `/pages/actor/my_orders`
-              })
-            }, 1500)
+        content: `确定要抢【${job.role_description || '群众演员'}】的单吗？\n报酬：${(job.price_amount / 100).toFixed(0)}元/${job.price_type === 'daily' ? '天' : '时'}`,
+        success: async (modalRes) => {
+          if (modalRes.confirm) {
+            await this.doGrabOrder(job._id)
           }
         }
       })
+    },
+
+    async doGrabOrder(orderId) {
+      uni.showLoading({ title: '抢单中...', mask: true })
+
+      try {
+        const orderCo = uniCloud.importObject('order-co')
+        const res = await orderCo.grab(orderId)
+
+        uni.hideLoading()
+
+        if (res.code === 0) {
+          // 抢单成功
+          uni.showToast({
+            title: '抢单成功！',
+            icon: 'success'
+          })
+
+          // 刷新列表和统计
+          this.loadStats()
+
+          // 跳转到履约追踪页
+          setTimeout(() => {
+            uni.navigateTo({
+              url: `/pages/actor/order_tracking?id=${orderId}`
+            })
+          }, 1500)
+        } else {
+          // 处理错误
+          let errorMsg = res.message || '抢单失败'
+
+          switch (res.code) {
+            case 401:
+              errorMsg = '请先登录'
+              setTimeout(() => {
+                uni.reLaunch({ url: '/pages/index/index' })
+              }, 1500)
+              break
+            case 403:
+              errorMsg = res.message || '请先完成身份认证'
+              break
+            case 400:
+              if (res.message.includes('已被') || res.message.includes('手慢')) {
+                errorMsg = '手慢了，订单已被其他人抢走'
+                // 刷新列表移除已被抢的订单
+                this.loadJobs(true)
+              }
+              break
+            case 404:
+              errorMsg = '订单不存在或已取消'
+              this.loadJobs(true)
+              break
+          }
+
+          uni.showToast({
+            title: errorMsg,
+            icon: 'none',
+            duration: 2500
+          })
+        }
+      } catch (error) {
+        uni.hideLoading()
+        console.error('抢单失败:', error)
+        uni.showToast({
+          title: '网络错误，请重试',
+          icon: 'none'
+        })
+      }
     },
 
     // ========== 工具方法 ==========
@@ -839,6 +982,32 @@ export default {
   &.reservation {
     @include status-tag($secondary-color);
   }
+}
+
+// ========== 加载状态 ==========
+.loading-state {
+  @include flex-center;
+  @include flex-column;
+  padding: $spacing-xxl;
+  gap: $spacing-base;
+
+  .loading-spinner {
+    width: 48rpx;
+    height: 48rpx;
+    border: 4rpx solid rgba(255, 215, 0, 0.3);
+    border-top-color: $primary-color;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  .loading-text {
+    font-size: $font-size-sm;
+    color: $text-secondary;
+  }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 // ========== 空状态 ==========
