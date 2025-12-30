@@ -10,7 +10,7 @@
 		<template v-else>
 			<!-- Logo和标题 -->
 			<view class="header-section">
-				<text class="app-title">艺拍即合</text>
+				<text class="app-title">SceneReady</text>
 				<text class="app-subtitle">短剧行业用工平台</text>
 			</view>
 
