@@ -91,6 +91,8 @@ export default {
 
       uni.getLocation({
         type: 'gcj02',
+        isHighAccuracy: true,
+        highAccuracyExpireTime: 4000,
         success: (res) => {
           this.mapCenter = {
             latitude: res.latitude,
@@ -98,6 +100,7 @@ export default {
           }
           this.getAddressFromLocation(res.latitude, res.longitude)
           uni.hideLoading()
+          console.log('定位成功, 精度:', res.accuracy, '米')
         },
         fail: (err) => {
           console.error('获取位置失败:', err)

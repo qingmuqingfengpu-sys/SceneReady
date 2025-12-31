@@ -115,7 +115,7 @@
       <!-- 操作按钮 -->
       <view class="bottom-actions">
         <button class="btn-secondary" @tap="reportIssue">遇到问题</button>
-        <button class="btn-primary" @tap="completeWork" v-if="isCheckedIn && !isCompleted">请求完工</button>
+        <button class="btn-primary waiting" v-if="isCheckedIn && !isCompleted" disabled>待剧组确认</button>
         <button class="btn-primary completed" @tap="viewDetail" v-else-if="isCompleted">已完成 - 查看详情</button>
         <button class="btn-primary" @tap="viewDetail" v-else>查看详情</button>
       </view>
@@ -246,6 +246,8 @@ export default {
     getMyLocation() {
       uni.getLocation({
         type: 'gcj02',
+        isHighAccuracy: true,
+        highAccuracyExpireTime: 4000,
         success: (res) => {
           this.myLocation = {
             latitude: res.latitude,
@@ -254,6 +256,7 @@ export default {
           this.mapCenter = { ...this.myLocation }
           this.updateMapElements()
           this.calculateDistance()
+          console.log('定位成功, 精度:', res.accuracy, '米')
         },
         fail: (err) => {
           console.error('获取位置失败:', err)
@@ -852,6 +855,11 @@ export default {
 
     &.completed {
       background: linear-gradient(135deg, #4CAF50 0%, #81C784 100%);
+    }
+
+    &.waiting {
+      background: linear-gradient(135deg, #FF9800 0%, #FFB74D 100%);
+      opacity: 0.8;
     }
   }
 

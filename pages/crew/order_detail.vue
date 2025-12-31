@@ -44,7 +44,7 @@
 
         <view class="info-row">
           <text class="info-label">需求人数</text>
-          <text class="info-value highlight">{{ order.actor_count }}人</text>
+          <text class="info-value highlight">{{ order.actor_count || 1 }}人</text>
         </view>
 
         <view class="info-row">

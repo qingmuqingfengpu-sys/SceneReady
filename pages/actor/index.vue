@@ -196,6 +196,9 @@
 export default {
   data() {
     return {
+      // 登录状态
+      isLoggedIn: false,
+
       // 统计数据
       stats: {
         available: 0,
@@ -264,20 +267,20 @@ export default {
   },
 
   async onLoad() {
-    const isLoggedIn = await this.checkLogin()
-    if (!isLoggedIn) {
-      return
-    }
-
-    // 等待一下确保token完全生效
-    await new Promise(resolve => setTimeout(resolve, 300))
+    // 检查登录状态（不强制跳转，游客可浏览）
+    this.isLoggedIn = this.checkLoginStatus()
 
     // 获取用户位置
     this.getUserLocation()
 
-    this.loadUserInfo()
-    this.loadStats()
+    // 游客也可以浏览工作列表
     this.loadJobs()
+
+    // 已登录用户加载个人数据
+    if (this.isLoggedIn) {
+      this.loadUserInfo()
+      this.loadStats()
+    }
   },
 
   onPullDownRefresh() {
@@ -286,63 +289,38 @@ export default {
 
   methods: {
     // ========== 登录检查 ==========
-    async checkLogin() {
+    // 检查登录状态（不强制跳转）
+    checkLoginStatus() {
       try {
-        // 检查本地存储的用户信息
-        const userInfo = uni.getStorageSync('uni-id-pages-userInfo')
-
-        // 检查 token 和过期时间
         const token = uni.getStorageSync('uni_id_token')
         const tokenExpired = uni.getStorageSync('uni_id_token_expired')
-
-        // 如果没有 token 或 token 已过期
-        if (!token || !tokenExpired || tokenExpired < Date.now()) {
-          uni.showModal({
-            title: '提示',
-            content: '登录已过期，请重新登录',
-            showCancel: false,
-            success: () => {
-              uni.reLaunch({
-                url: '/pages/index/index'
-              })
-            }
-          })
-          return false
-        }
-
-        // 如果有 token 但没有用户信息，尝试获取
-        if (!userInfo || !userInfo._id) {
-          try {
-            const cloudUserInfo = uniCloud.getCurrentUserInfo()
-            if (cloudUserInfo && cloudUserInfo.uid) {
-              // 如果云端有用户信息，说明登录有效
-              return true
-            }
-          } catch (e) {
-            console.error('获取云端用户信息失败:', e)
-          }
-
-          // 如果获取不到用户信息，跳转登录
-          uni.showModal({
-            title: '提示',
-            content: '请先登录',
-            showCancel: false,
-            success: () => {
-              uni.reLaunch({
-                url: '/pages/index/index'
-              })
-            }
-          })
-          return false
-        }
-
-        // token 和用户信息都存在，登录有效
-        return true
+        // 有有效token则已登录
+        return token && tokenExpired && tokenExpired > Date.now()
       } catch (error) {
         console.error('检查登录状态失败:', error)
-        // 出错时也允许继续，避免阻塞用户
-        return true
+        return false
       }
+    },
+
+    // 需要登录时调用，引导用户登录
+    requireLogin(actionName = '此操作') {
+      if (this.isLoggedIn) return true
+
+      uni.showModal({
+        title: '需要登录',
+        content: `${actionName}需要登录后才能使用，是否现在登录？`,
+        confirmText: '去登录',
+        success: (res) => {
+          if (res.confirm) {
+            // 记录当前角色，登录后返回
+            uni.setStorageSync('selected_role', 'actor')
+            uni.navigateTo({
+              url: '/uni_modules/uni-id-pages/pages/login/login-withpwd'
+            })
+          }
+        }
+      })
+      return false
     },
 
     // ========== 数据加载 ==========
@@ -530,12 +508,14 @@ export default {
     getUserLocation() {
       uni.getLocation({
         type: 'gcj02',
+        isHighAccuracy: true,
+        highAccuracyExpireTime: 4000,
         success: (res) => {
           this.userLocation = {
             longitude: res.longitude,
             latitude: res.latitude
           }
-          console.log('获取位置成功:', this.userLocation)
+          console.log('获取位置成功:', this.userLocation, '精度:', res.accuracy)
         },
         fail: (err) => {
           console.warn('获取位置失败:', err)
@@ -547,12 +527,16 @@ export default {
     // ========== 列表操作 ==========
     async onRefresh() {
       this.refreshing = true
+      // 刷新时重新检查登录状态
+      this.isLoggedIn = this.checkLoginStatus()
+
       try {
-        // 并行加载数据
-        await Promise.all([
-          this.loadJobs(true),
-          this.loadStats()
-        ])
+        // 游客只刷新工作列表，登录用户同时刷新统计
+        const tasks = [this.loadJobs(true)]
+        if (this.isLoggedIn) {
+          tasks.push(this.loadStats())
+        }
+        await Promise.all(tasks)
       } finally {
         this.refreshing = false
         uni.stopPullDownRefresh()
@@ -566,6 +550,9 @@ export default {
 
     // ========== 个人资料 ==========
     goToProfile() {
+      // 需要登录才能访问个人中心
+      if (!this.requireLogin('查看个人中心')) return
+
       uni.navigateTo({
         url: '/pages/actor/profile'
       })
@@ -573,12 +560,16 @@ export default {
 
     // ========== 订单操作 ==========
     viewJobDetail(job) {
+      // 查看详情不需要登录，游客可浏览
       uni.navigateTo({
         url: `/pages/actor/job_detail?id=${job._id}`
       })
     },
 
     async grabOrder(job) {
+      // 抢单需要登录
+      if (!this.requireLogin('抢单')) return
+
       // 显示确认弹窗
       uni.showModal({
         title: '确认抢单',

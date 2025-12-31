@@ -299,11 +299,12 @@ export default {
           db.collection('orders').where({ receiver_id: userId, order_status: 3 }).count()
         ])
 
+        // count() 返回结果在 result.total 中
         this.stats = {
-          ongoing: ongoingRes.total,
-          completed: completedRes.total,
-          totalEarned: 0, // TODO: 计算总收入
-          goodRate: 100 // TODO: 计算好评率
+          ongoing: ongoingRes.result ? ongoingRes.result.total : (ongoingRes.total || 0),
+          completed: completedRes.result ? completedRes.result.total : (completedRes.total || 0),
+          totalEarned: 0,
+          goodRate: 100
         }
       } catch (error) {
         console.error('加载统计失败:', error)

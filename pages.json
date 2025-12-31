@@ -206,7 +206,6 @@
 	"uniIdRouter": {
 		"loginPage": "uni_modules/uni-id-pages/pages/login/login-withoutpwd",
 		"needLogin": [
-			"pages/index/index",
 			"uni_modules/uni-id-pages/pages/userinfo/userinfo"
 		],
 		"resToLogin": true

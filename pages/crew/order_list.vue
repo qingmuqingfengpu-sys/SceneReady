@@ -3,15 +3,19 @@
 
     <!-- 状态筛选标签 -->
     <view class="filter-tabs">
-      <view
-        v-for="(tab, index) in tabs"
-        :key="index"
-        class="tab-item"
-        :class="{ active: currentTab === index }"
-        @click="switchTab(index)"
-      >
-        <text class="tab-text">{{ tab.name }}</text>
-      </view>
+      <scroll-view scroll-x class="tabs-scroll">
+        <view class="tabs-inner">
+          <view
+            v-for="(tab, index) in tabs"
+            :key="index"
+            class="tab-item"
+            :class="{ active: currentTab === index }"
+            @click="switchTab(index)"
+          >
+            <text class="tab-text">{{ tab.name }}</text>
+          </view>
+        </view>
+      </scroll-view>
     </view>
 
     <!-- 订单列表 -->
@@ -25,8 +29,8 @@
         >
           <!-- 订单头部 -->
           <view class="order-header">
-            <view class="status-badge" :class="[order.order_status === 0 ? 'status-pending' : '', order.order_status === 1 ? 'status-ongoing' : '', order.order_status === 2 ? 'status-payment' : '', order.order_status === 3 ? 'status-completed' : '', order.order_status === 4 ? 'status-canceled' : '']">
-              {{ getStatusText(order.order_status) }}
+            <view class="status-badge" :class="'status-' + order.order_status">
+              {{ statusTextMap[order.order_status] || '未知' }}
             </view>
             <view class="order-type-tag">
               {{ order.order_type === 'immediate' ? '即时单' : '预约单' }}
@@ -36,19 +40,25 @@
           <!-- 订单内容 -->
           <view class="order-body">
             <view class="info-row">
-              <uni-icons type="location-filled" size="18" color="#007aff"></uni-icons>
-              <text class="info-label">集合地点:</text>
+              <view class="info-icon location-icon">
+                <uni-icons type="location-filled" size="16" color="#FFD700"></uni-icons>
+              </view>
+              <text class="info-label">集合地点</text>
               <text class="info-value">{{ order.meeting_location_name }}</text>
             </view>
             <view class="info-row">
-              <uni-icons type="calendar-filled" size="18" color="#ff9800"></uni-icons>
-              <text class="info-label">集合时间:</text>
+              <view class="info-icon time-icon">
+                <uni-icons type="calendar-filled" size="16" color="#2979FF"></uni-icons>
+              </view>
+              <text class="info-label">集合时间</text>
               <text class="info-value">{{ formatDateTime(order.meeting_time) }}</text>
             </view>
             <view class="info-row">
-              <uni-icons type="person-filled" size="18" color="#4caf50"></uni-icons>
-              <text class="info-label">需要人数:</text>
-              <text class="info-value">{{ order.people_needed }}人</text>
+              <view class="info-icon people-icon">
+                <uni-icons type="person-filled" size="16" color="#4CAF50"></uni-icons>
+              </view>
+              <text class="info-label">需要人数</text>
+              <text class="info-value highlight">{{ order.people_needed }}人</text>
             </view>
           </view>
 
@@ -56,7 +66,7 @@
           <view class="order-footer">
             <view class="price-box">
               <text class="price-label">{{ order.price_type === 'daily' ? '按天' : '按时' }}</text>
-              <text class="price-amount">¥{{ (order.price_amount / 100).toFixed(2) }}</text>
+              <text class="price-amount">{{ (order.price_amount / 100).toFixed(0) }}</text>
             </view>
 
             <view class="action-btns">
@@ -66,15 +76,14 @@
                 size="mini"
                 @click.stop="cancelOrder(order._id)"
               >
-                取消订单
+                取消
               </button>
               <button
                 class="btn-detail"
                 size="mini"
-                type="primary"
                 @click.stop="goToDetail(order._id)"
               >
-                查看详情
+                详情
               </button>
             </view>
           </view>
@@ -83,8 +92,11 @@
 
       <!-- 空状态 -->
       <view v-else class="empty-box">
-        <image class="empty-image" src="/static/empty-list.png" mode="aspectFit"></image>
+        <view class="empty-icon">
+          <uni-icons type="list" size="64" color="#666"></uni-icons>
+        </view>
         <text class="empty-tip">{{ emptyTip }}</text>
+        <button class="btn-post" @click="goToPost">发布需求</button>
       </view>
     </view>
 
@@ -106,7 +118,14 @@ export default {
       orderList: [],
       page: 1,
       pageSize: 20,
-      total: 0
+      total: 0,
+      statusTextMap: {
+        0: '待接单',
+        1: '进行中',
+        2: '待支付',
+        3: '已完成',
+        4: '已取消'
+      }
     }
   },
 
@@ -124,7 +143,12 @@ export default {
   },
 
   onLoad() {
+    console.log('onLoad - orderList:', this.orderList)
     this.loadOrders()
+  },
+
+  mounted() {
+    console.log('mounted - orderList:', this.orderList)
   },
 
   onPullDownRefresh() {
@@ -143,7 +167,6 @@ export default {
   },
 
   methods: {
-    // 切换标签
     switchTab(index) {
       this.currentTab = index
       this.page = 1
@@ -151,9 +174,16 @@ export default {
       this.loadOrders()
     },
 
-    // 加载订单列表
     async loadOrders(isLoadMore = false) {
       try {
+        // 检查登录状态
+        const token = uni.getStorageSync('uni_id_token')
+        if (!token) {
+          console.log('loadOrders: 未登录')
+          this.orderList = []
+          return
+        }
+
         if (!isLoadMore) {
           uni.showLoading({ title: '加载中...' })
         }
@@ -164,23 +194,40 @@ export default {
           pageSize: this.pageSize
         }
 
-        // 添加状态筛选
         const currentStatus = this.tabs[this.currentTab].status
         if (currentStatus !== null) {
           params.status = currentStatus
         }
 
+        console.log('loadOrders params:', params)
         const res = await orderCo.getMyOrders(params)
+        console.log('loadOrders result:', res)
+        console.log('loadOrders list:', res.data ? res.data.list : 'no data')
+        console.log('loadOrders list length:', res.data && res.data.list ? res.data.list.length : 0)
 
         uni.hideLoading()
 
         if (res.code === 0) {
+          const list = res.data.list || []
+          console.log('Setting orderList:', list)
           if (isLoadMore) {
-            this.orderList = [...this.orderList, ...res.data.list]
+            this.orderList = [...this.orderList, ...list]
           } else {
-            this.orderList = res.data.list
+            this.orderList = list
           }
-          this.total = res.data.total
+          this.total = res.data.total || 0
+          console.log('After set, orderList:', this.orderList)
+        } else if (res.code === 401) {
+          // 未登录，跳转到登录页
+          uni.showToast({
+            title: '请先登录',
+            icon: 'none'
+          })
+          setTimeout(() => {
+            uni.navigateTo({
+              url: '/uni_modules/uni-id-pages/pages/login/login-withpwd'
+            })
+          }, 1500)
         } else {
           uni.showToast({
             title: res.message || '加载失败',
@@ -197,7 +244,6 @@ export default {
       }
     },
 
-    // 取消订单
     cancelOrder(orderId) {
       uni.showModal({
         title: '确认取消',
@@ -237,14 +283,18 @@ export default {
       })
     },
 
-    // 跳转到详情
     goToDetail(orderId) {
       uni.navigateTo({
         url: `/pages/crew/order_detail?id=${orderId}`
       })
     },
 
-    // 获取状态样式类
+    goToPost() {
+      uni.navigateTo({
+        url: '/pages/crew/post_order'
+      })
+    },
+
     getStatusClass(status) {
       const classMap = {
         0: 'status-pending',
@@ -256,7 +306,6 @@ export default {
       return classMap[status] || ''
     },
 
-    // 获取状态文本
     getStatusText(status) {
       const textMap = {
         0: '待接单',
@@ -268,136 +317,174 @@ export default {
       return textMap[status] || '未知'
     },
 
-    // 格式化日期时间
     formatDateTime(timestamp) {
       const date = new Date(timestamp)
-      const year = date.getFullYear()
       const month = (date.getMonth() + 1).toString().padStart(2, '0')
       const day = date.getDate().toString().padStart(2, '0')
       const hour = date.getHours().toString().padStart(2, '0')
       const minute = date.getMinutes().toString().padStart(2, '0')
-      return `${year}-${month}-${day} ${hour}:${minute}`
+      return `${month}-${day} ${hour}:${minute}`
     }
   }
 }
 </script>
 
 <style lang="scss" scoped>
+@import '@/common/theme.scss';
+
 .order-list-page {
   min-height: 100vh;
-  background-color: #f5f5f5;
+  background-color: $bg-primary;
 }
 
 // 筛选标签
 .filter-tabs {
-  display: flex;
-  background-color: #fff;
-  padding: 10px 15px;
-  gap: 15px;
-  border-bottom: 1px solid #e5e5e5;
-  overflow-x: auto;
-  white-space: nowrap;
+  background-color: $bg-secondary;
+  padding: $spacing-sm 0;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.1);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+
+  .tabs-scroll {
+    width: 100%;
+    white-space: nowrap;
+  }
+
+  .tabs-inner {
+    display: inline-flex;
+    padding: 0 $spacing-base;
+    gap: $spacing-sm;
+  }
 
   .tab-item {
     flex-shrink: 0;
-    padding: 8px 16px;
-    border-radius: 20px;
-    font-size: 14px;
-    color: #666;
-    background-color: #f5f5f5;
+    padding: $spacing-sm $spacing-lg;
+    border-radius: $border-radius-base;
+    font-size: $font-size-sm;
+    color: $text-secondary;
+    background-color: $bg-tertiary;
     transition: all 0.3s;
 
     &.active {
-      background-color: #007aff;
-      color: #fff;
-      font-weight: 500;
+      background: linear-gradient(135deg, $primary-color 0%, #FFED4E 100%);
+      color: $black;
+      font-weight: $font-weight-bold;
     }
   }
 }
 
 // 列表内容
 .list-content {
-  padding: 15px;
+  padding: $spacing-base;
 }
 
 .order-list {
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  gap: $spacing-base;
 }
 
 .order-card {
-  background-color: #fff;
-  border-radius: 12px;
-  padding: 15px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  @include card;
+
+  &:active {
+    opacity: 0.9;
+    transform: scale(0.99);
+  }
 }
 
 .order-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #f0f0f0;
+  margin-bottom: $spacing-base;
+  padding-bottom: $spacing-base;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.1);
 
   .status-badge {
-    padding: 5px 12px;
-    border-radius: 12px;
-    font-size: 13px;
-    font-weight: 500;
+    padding: 6rpx 16rpx;
+    border-radius: $border-radius-sm;
+    font-size: $font-size-xs;
+    font-weight: $font-weight-bold;
 
-    &.status-pending {
-      background-color: #fff3e0;
-      color: #f57c00;
+    &.status-0 {
+      background-color: rgba($warning-color, 0.15);
+      color: $warning-color;
+      border: 1rpx solid $warning-color;
     }
 
-    &.status-ongoing {
-      background-color: #e3f2fd;
-      color: #1976d2;
+    &.status-1 {
+      background-color: rgba($secondary-color, 0.15);
+      color: $secondary-color;
+      border: 1rpx solid $secondary-color;
     }
 
-    &.status-completed {
-      background-color: #e8f5e9;
-      color: #388e3c;
+    &.status-2 {
+      background-color: rgba($info-color, 0.15);
+      color: $info-color;
+      border: 1rpx solid $info-color;
     }
 
-    &.status-canceled {
-      background-color: #fce4ec;
-      color: #c2185b;
+    &.status-3 {
+      background-color: rgba($success-color, 0.15);
+      color: $success-color;
+      border: 1rpx solid $success-color;
+    }
+
+    &.status-4 {
+      background-color: rgba($alert-color, 0.15);
+      color: $alert-color;
+      border: 1rpx solid $alert-color;
     }
   }
 
   .order-type-tag {
-    padding: 4px 10px;
-    background-color: #f5f5f5;
-    border-radius: 8px;
-    font-size: 12px;
-    color: #666;
+    padding: 6rpx 16rpx;
+    background-color: $bg-tertiary;
+    border-radius: $border-radius-sm;
+    font-size: $font-size-xs;
+    color: $text-secondary;
   }
 }
 
 .order-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: $spacing-sm;
+  margin-bottom: $spacing-base;
 }
 
 .info-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: $spacing-sm;
+
+  .info-icon {
+    width: 40rpx;
+    height: 40rpx;
+    border-radius: $border-radius-sm;
+    @include flex-center;
+    flex-shrink: 0;
+  }
 
   .info-label {
-    font-size: 13px;
-    color: #999;
+    font-size: $font-size-sm;
+    color: $text-hint;
+    width: 120rpx;
+    flex-shrink: 0;
   }
 
   .info-value {
     flex: 1;
-    font-size: 14px;
-    color: #333;
+    font-size: $font-size-base;
+    color: $text-primary;
+    @include text-ellipsis;
+
+    &.highlight {
+      color: $primary-color;
+      font-weight: $font-weight-medium;
+    }
   }
 }
 
@@ -405,39 +492,62 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-top: 12px;
-  border-top: 1px solid #f0f0f0;
+  padding-top: $spacing-base;
+  border-top: 1rpx solid rgba(255, 255, 255, 0.1);
 }
 
 .price-box {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: $spacing-xs;
 
   .price-label {
-    font-size: 12px;
-    color: #999;
+    font-size: $font-size-xs;
+    color: $text-hint;
   }
 
   .price-amount {
-    font-size: 20px;
-    font-weight: 600;
-    color: #ff5722;
+    font-size: $font-size-xxl;
+    font-weight: $font-weight-bold;
+    color: $primary-color;
+    font-family: $font-family-monospace;
+
+    &::before {
+      content: '\00A5';
+      font-size: $font-size-lg;
+    }
   }
 }
 
 .action-btns {
   display: flex;
-  gap: 10px;
+  gap: $spacing-sm;
 
   .btn-cancel {
-    border: 1px solid #e5e5e5;
-    background-color: #fff;
-    color: #666;
+    padding: $spacing-xs $spacing-base;
+    background-color: transparent;
+    border: 1rpx solid rgba(255, 255, 255, 0.3);
+    border-radius: $border-radius-sm;
+    color: $text-secondary;
+    font-size: $font-size-sm;
+
+    &:active {
+      background-color: rgba(255, 255, 255, 0.1);
+    }
   }
 
   .btn-detail {
-    // 使用默认primary样式
+    padding: $spacing-xs $spacing-base;
+    background: linear-gradient(135deg, $primary-color 0%, #FFED4E 100%);
+    border: none;
+    border-radius: $border-radius-sm;
+    color: $black;
+    font-size: $font-size-sm;
+    font-weight: $font-weight-bold;
+
+    &:active {
+      opacity: 0.8;
+    }
   }
 }
 
@@ -446,17 +556,26 @@ export default {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 60px 20px;
+  padding: $spacing-xxl $spacing-base;
 
-  .empty-image {
-    width: 150px;
-    height: 150px;
-    margin-bottom: 20px;
+  .empty-icon {
+    width: 160rpx;
+    height: 160rpx;
+    background-color: $bg-tertiary;
+    border-radius: $border-radius-circle;
+    @include flex-center;
+    margin-bottom: $spacing-lg;
   }
 
   .empty-tip {
-    font-size: 14px;
-    color: #999;
+    font-size: $font-size-base;
+    color: $text-secondary;
+    margin-bottom: $spacing-lg;
+  }
+
+  .btn-post {
+    @include button-primary;
+    padding: $spacing-sm $spacing-xl;
   }
 }
 </style>

@@ -25,24 +25,28 @@
     <!-- 底部抽屉 -->
     <view
       class="drawer-container"
-      :class="{ 'drawer-expanded': drawerExpanded }"
+      :style="{ height: drawerHeight + 'rpx' }"
       @touchstart="onDrawerTouchStart"
-      @touchmove="onDrawerTouchMove"
+      @touchmove.stop.prevent="onDrawerTouchMove"
       @touchend="onDrawerTouchEnd"
     >
       <!-- 抽屉把手 -->
-      <view class="drawer-handle-area" @tap="toggleDrawer">
+      <view class="drawer-handle-area">
         <view class="drawer-handle"></view>
       </view>
 
       <!-- 抽屉内容 -->
-      <scroll-view scroll-y class="drawer-content">
+      <scroll-view
+        scroll-y
+        class="drawer-content"
+        :style="{ height: (drawerHeight - 60) + 'rpx' }"
+      >
         <!-- 搜索栏 -->
         <view class="search-bar">
           <uni-icons type="search" size="20" color="#999"></uni-icons>
           <input
             class="search-input"
-            placeholder="搜索演员（身高、特长、体型）"
+            placeholder="搜索演员"
             placeholder-class="search-placeholder"
             v-model="searchKeyword"
             @input="onSearchInput"
@@ -52,18 +56,17 @@
           </view>
         </view>
 
-        <!-- 收起状态：推荐演员 -->
-        <view v-if="!drawerExpanded" class="recommended-actors">
-          <view class="section-title">
-            <text class="title-text">附近演员</text>
-            <text class="title-count">({{ nearbyActors.length }}人在线)</text>
+        <!-- 搜索结果列表 -->
+        <view v-if="searchKeyword && searchResults.length > 0" class="search-results">
+          <view class="section-header-compact">
+            <text class="section-title-text">搜索结果</text>
+            <text class="result-count">{{ searchResults.length }}人</text>
           </view>
-
-          <view v-if="nearbyActors.length > 0" class="actor-cards">
+          <view class="search-list">
             <view
-              v-for="actor in nearbyActors.slice(0, 2)"
+              v-for="actor in searchResults"
               :key="actor.id"
-              class="actor-card-mini"
+              class="search-item"
               @tap="showActorDetail(actor)"
             >
               <image class="actor-avatar" :src="actor.avatar || '/static/default-avatar.png'" mode="aspectFill"></image>
@@ -74,97 +77,21 @@
                   <text class="meta-divider">|</text>
                   <text class="meta-item">{{ actor.distance }}km</text>
                 </view>
-                <view class="actor-tags">
-                  <text
-                    v-for="skill in actor.skills.slice(0, 2)"
-                    :key="skill"
-                    class="skill-tag"
-                  >
-                    {{ skill }}
-                  </text>
-                </view>
               </view>
-              <view :class="['credit-badge', actor.credit_score >= 130 ? 'credit-gold' : (actor.credit_score >= 110 ? 'credit-silver' : 'credit-normal')]">
+              <view :class="['credit-badge', getCreditClass(actor.credit_score)]">
                 {{ actor.credit_score }}
               </view>
             </view>
           </view>
-          <view v-else class="empty-actors">
-            <uni-icons type="info" size="32" color="#999"></uni-icons>
-            <text class="empty-text">附近暂无演员</text>
-          </view>
         </view>
 
-        <!-- 展开状态：完整信息 -->
-        <view v-else class="expanded-content">
-          <!-- 统计卡片 -->
-          <view class="stats-compact">
-            <view class="stat-item-compact">
-              <text class="stat-value-compact">{{ stats.pending }}</text>
-              <text class="stat-label-compact">待接单</text>
-            </view>
-            <view class="stat-divider-compact"></view>
-            <view class="stat-item-compact">
-              <text class="stat-value-compact">{{ stats.ongoing }}</text>
-              <text class="stat-label-compact">进行中</text>
-            </view>
-            <view class="stat-divider-compact"></view>
-            <view class="stat-item-compact">
-              <text class="stat-value-compact">{{ stats.completed }}</text>
-              <text class="stat-label-compact">已完成</text>
-            </view>
-          </view>
+        <!-- 搜索无结果 -->
+        <view v-else-if="searchKeyword && searchResults.length === 0 && !searchLoading" class="empty-search">
+          <text class="empty-text">未找到匹配的演员</text>
+        </view>
 
-          <!-- 筛选器 -->
-          <view class="filter-section">
-            <view class="filter-row">
-              <text class="filter-label">性别</text>
-              <view class="filter-options">
-                <text
-                  v-for="item in genderOptions"
-                  :key="item.value"
-                  :class="['filter-chip', { 'active': filters.gender === item.value }]"
-                  @tap="setFilter('gender', item.value)"
-                >
-                  {{ item.label }}
-                </text>
-              </view>
-            </view>
-
-            <view class="filter-row">
-              <text class="filter-label">身高(cm)</text>
-              <view class="filter-range">
-                <input
-                  class="range-input"
-                  type="number"
-                  placeholder="最低"
-                  v-model="filters.heightMin"
-                />
-                <text class="range-separator">-</text>
-                <input
-                  class="range-input"
-                  type="number"
-                  placeholder="最高"
-                  v-model="filters.heightMax"
-                />
-              </view>
-            </view>
-
-            <view class="filter-row">
-              <text class="filter-label">特长</text>
-              <view class="filter-options">
-                <text
-                  v-for="skill in skillOptions"
-                  :key="skill.value"
-                  :class="['filter-chip', { 'active': filters.skills.includes(skill.value) }]"
-                  @tap="toggleSkill(skill.value)"
-                >
-                  {{ skill.label }}
-                </text>
-              </view>
-            </view>
-          </view>
-
+        <!-- 非搜索状态：显示最近订单和信用分 -->
+        <view v-if="!searchKeyword" class="main-content">
           <!-- 最近订单 -->
           <view class="recent-orders-compact">
             <view class="section-header-compact">
@@ -190,7 +117,7 @@
                 </view>
                 <view class="order-content-compact">
                   <text class="order-location">{{ order.meeting_location_name }}</text>
-                  <text class="order-price">¥{{ (order.price_amount / 100).toFixed(0) }}</text>
+                  <text class="order-price">{{ (order.price_amount / 100).toFixed(0) }}</text>
                 </view>
               </view>
             </view>
@@ -291,47 +218,33 @@
 export default {
   data() {
     return {
+      // 登录状态
+      isLoggedIn: false,
+
       // 地图相关
       mapCenter: {
-        latitude: 29.5630,  // 重庆大学默认坐标
+        latitude: 29.5630,
         longitude: 106.4650
       },
       mapScale: 15,
-      actorMarkers: [],  // 演员标记点
+      actorMarkers: [],
 
       // 抽屉相关
-      drawerExpanded: false,
+      drawerHeight: 400,
+      drawerMinHeight: 280,
+      drawerMaxHeight: 1000,
       touchStartY: 0,
-      drawerStartY: 0,
+      drawerStartHeight: 0,
+      isDragging: false,
 
       // 搜索
       searchKeyword: '',
+      searchResults: [],
+      searchLoading: false,
+      searchTimer: null,
 
-      // 筛选器
-      filters: {
-        gender: 0,  // 0-不限, 1-男, 2-女
-        heightMin: '',
-        heightMax: '',
-        skills: []
-      },
-      genderOptions: [
-        { label: '不限', value: 0 },
-        { label: '男', value: 1 },
-        { label: '女', value: 2 }
-      ],
-      skillOptions: [
-        { label: '开车', value: 'driving' },
-        { label: '跳舞', value: 'dancing' },
-        { label: '唱歌', value: 'singing' },
-        { label: '武术', value: 'martial_arts' },
-        { label: '游泳', value: 'swimming' },
-        { label: '骑马', value: 'riding' },
-        { label: '乐器', value: 'instrument' },
-        { label: '外语', value: 'language' }
-      ],
-
-      // 演员数据
-      nearbyActors: [],
+      // 演员数据（用于地图标记和搜索）
+      actorList: [],
       selectedActor: null,
       actorsLoading: false,
 
@@ -341,7 +254,7 @@ export default {
         latitude: null
       },
 
-      // 原有数据
+      // 用户信息
       userInfo: {},
       stats: {
         pending: 0,
@@ -373,24 +286,23 @@ export default {
   },
 
   async onLoad() {
-    const isLoggedIn = await this.checkLogin()
-    if (!isLoggedIn) {
-      return
+    this.isLoggedIn = this.checkLoginStatus()
+    this.getMyLocation()
+
+    if (this.isLoggedIn) {
+      this.loadUserInfo()
+      this.loadStats()
+      this.loadRecentOrders()
     }
-
-    // 等待一下确保token完全生效
-    await new Promise(resolve => setTimeout(resolve, 300))
-
-    this.loadUserInfo()
-    this.loadStats()
-    this.loadRecentOrders()
-    this.getMyLocation()  // 会在成功后自动调用 loadNearbyActors
   },
 
   onPullDownRefresh() {
-    this.loadStats()
-    this.loadRecentOrders()
-    this.loadNearbyActors()
+    this.isLoggedIn = this.checkLoginStatus()
+    this.loadActors()
+    if (this.isLoggedIn) {
+      this.loadStats()
+      this.loadRecentOrders()
+    }
     setTimeout(() => {
       uni.stopPullDownRefresh()
     }, 1000)
@@ -398,10 +310,11 @@ export default {
 
   methods: {
     // ========== 地图相关 ==========
-    // 获取我的位置
     getMyLocation() {
       uni.getLocation({
         type: 'gcj02',
+        isHighAccuracy: true,
+        highAccuracyExpireTime: 4000,
         success: (res) => {
           this.mapCenter.latitude = res.latitude
           this.mapCenter.longitude = res.longitude
@@ -409,8 +322,8 @@ export default {
             longitude: res.longitude,
             latitude: res.latitude
           }
-          // 位置获取成功后加载附近演员
-          this.loadNearbyActors()
+          console.log('定位成功, 精度:', res.accuracy, '米')
+          this.loadActors()
         },
         fail: (err) => {
           console.error('获取位置失败:', err)
@@ -418,42 +331,32 @@ export default {
             title: '定位失败，使用默认位置',
             icon: 'none'
           })
-          // 使用默认位置也尝试加载
           this.userLocation = {
             longitude: this.mapCenter.longitude,
             latitude: this.mapCenter.latitude
           }
-          this.loadNearbyActors()
+          this.loadActors()
         }
       })
     },
 
-    // 回到我的位置
-    centerToMyLocation() {
-      this.getMyLocation()
-    },
-
-    // 地图区域变化
     onRegionChange(e) {
       if (e.type === 'end') {
-        // 区域变化结束，重新加载附近演员
-        this.loadNearbyActors()
+        this.loadActors()
       }
     },
 
-    // 点击演员标记
     onMarkerTap(e) {
       const markerId = e.detail.markerId
-      const actor = this.nearbyActors.find(a => a.id === markerId)
+      const actor = this.actorList.find(a => a.id === markerId)
       if (actor) {
         this.showActorDetail(actor)
       }
     },
 
-    // 加载附近演员
-    async loadNearbyActors() {
+    // 加载演员（用于地图标记和搜索）
+    async loadActors() {
       if (!this.userLocation.longitude || !this.userLocation.latitude) {
-        console.log('位置信息不可用，跳过加载演员')
         return
       }
 
@@ -462,32 +365,15 @@ export default {
 
       try {
         const orderCo = uniCloud.importObject('order-co')
-
-        // 构建查询参数
         const params = {
           longitude: this.userLocation.longitude,
           latitude: this.userLocation.latitude,
-          maxDistance: 5000  // 5公里范围
-        }
-
-        // 添加筛选条件
-        if (this.filters.gender > 0) {
-          params.gender = this.filters.gender
-        }
-        if (this.filters.heightMin) {
-          params.heightMin = parseInt(this.filters.heightMin)
-        }
-        if (this.filters.heightMax) {
-          params.heightMax = parseInt(this.filters.heightMax)
-        }
-        if (this.filters.skills && this.filters.skills.length > 0) {
-          params.skills = this.filters.skills
+          maxDistance: 5000
         }
 
         const res = await orderCo.getNearbyActors(params)
 
         if (res.code === 0 && res.data) {
-          // 技能标签映射
           const skillLabelMap = {
             'driving': '开车',
             'dancing': '跳舞',
@@ -499,7 +385,6 @@ export default {
             'language': '外语'
           }
 
-          // 体型映射
           const bodyTypeMap = {
             'slim': '偏瘦',
             'standard': '标准',
@@ -507,8 +392,7 @@ export default {
             'plump': '偏胖'
           }
 
-          // 转换数据格式
-          this.nearbyActors = res.data.map((actor, index) => ({
+          this.actorList = res.data.map((actor, index) => ({
             id: actor._id || index + 1,
             _id: actor._id,
             nickname: actor.nickname || '演员',
@@ -524,8 +408,7 @@ export default {
             videoCard: actor.video_card || ''
           }))
 
-          // 生成地图标记点
-          this.actorMarkers = this.nearbyActors.map(actor => ({
+          this.actorMarkers = this.actorList.map(actor => ({
             id: actor.id,
             latitude: actor.latitude,
             longitude: actor.longitude,
@@ -543,36 +426,30 @@ export default {
               padding: 6
             }
           }))
-
-          console.log(`加载到 ${this.nearbyActors.length} 个附近演员`)
         } else {
-          console.warn('获取附近演员失败:', res.message)
-          this.nearbyActors = []
+          this.actorList = []
           this.actorMarkers = []
         }
       } catch (error) {
-        console.error('加载附近演员失败:', error)
-        this.nearbyActors = []
+        console.error('加载演员失败:', error)
+        this.actorList = []
         this.actorMarkers = []
       } finally {
         this.actorsLoading = false
       }
     },
 
-    // 显示演员详情
     showActorDetail(actor) {
       this.selectedActor = actor
       this.$refs.actorDetailPopup.open()
     },
 
-    // 关闭演员详情
     closeActorDetail() {
       this.$refs.actorDetailPopup.close()
     },
 
-    // 邀请演员
     inviteActor() {
-      // TODO: 实现邀请功能
+      if (!this.requireLogin('邀请演员')) return
       uni.showToast({
         title: '邀请功能开发中',
         icon: 'none'
@@ -580,113 +457,106 @@ export default {
     },
 
     // ========== 抽屉相关 ==========
-    toggleDrawer() {
-      this.drawerExpanded = !this.drawerExpanded
-    },
-
     onDrawerTouchStart(e) {
       this.touchStartY = e.touches[0].clientY
+      this.drawerStartHeight = this.drawerHeight
+      this.isDragging = true
     },
 
     onDrawerTouchMove(e) {
-      const currentY = e.touches[0].clientY
-      const deltaY = currentY - this.touchStartY
+      if (!this.isDragging) return
 
-      // 向下滑动超过50px则收起，向上滑动超过50px则展开
-      if (deltaY > 50 && this.drawerExpanded) {
-        this.drawerExpanded = false
-      } else if (deltaY < -50 && !this.drawerExpanded) {
-        this.drawerExpanded = true
+      const currentY = e.touches[0].clientY
+      const deltaY = this.touchStartY - currentY
+      const deltaRpx = deltaY * 2
+
+      let newHeight = this.drawerStartHeight + deltaRpx
+
+      if (newHeight < this.drawerMinHeight) {
+        newHeight = this.drawerMinHeight
       }
+      if (newHeight > this.drawerMaxHeight) {
+        newHeight = this.drawerMaxHeight
+      }
+
+      this.drawerHeight = newHeight
     },
 
     onDrawerTouchEnd(e) {
+      this.isDragging = false
       this.touchStartY = 0
+      this.drawerStartHeight = 0
     },
 
-    // ========== 搜索和筛选 ==========
+    // ========== 搜索 ==========
     onSearchInput() {
-      // TODO: 实现搜索功能
-      console.log('搜索:', this.searchKeyword)
+      if (this.searchTimer) {
+        clearTimeout(this.searchTimer)
+      }
+
+      if (!this.searchKeyword.trim()) {
+        this.searchResults = []
+        return
+      }
+
+      this.searchTimer = setTimeout(() => {
+        this.performSearch()
+      }, 300)
+    },
+
+    performSearch() {
+      const keyword = this.searchKeyword.trim().toLowerCase()
+      if (!keyword) {
+        this.searchResults = []
+        return
+      }
+
+      this.searchLoading = true
+
+      this.searchResults = this.actorList.filter(actor => {
+        const nameMatch = actor.nickname && actor.nickname.toLowerCase().includes(keyword)
+        const heightMatch = String(actor.height).includes(keyword)
+        const skillMatch = actor.skills && actor.skills.some(s => s.toLowerCase().includes(keyword))
+        const bodyTypeMatch = actor.bodyType && actor.bodyType.includes(keyword)
+        return nameMatch || heightMatch || skillMatch || bodyTypeMatch
+      })
+
+      this.searchLoading = false
     },
 
     clearSearch() {
       this.searchKeyword = ''
+      this.searchResults = []
     },
 
-    setFilter(key, value) {
-      this.filters[key] = value
-      this.loadNearbyActors()
-    },
-
-    toggleSkill(skill) {
-      const index = this.filters.skills.indexOf(skill)
-      if (index > -1) {
-        this.filters.skills.splice(index, 1)
-      } else {
-        this.filters.skills.push(skill)
-      }
-      this.loadNearbyActors()
-    },
-
-    // ========== 原有功能 ==========
-    async checkLogin() {
+    // ========== 登录检查 ==========
+    checkLoginStatus() {
       try {
-        // 检查本地存储的用户信息
-        const userInfo = uni.getStorageSync('uni-id-pages-userInfo')
-
-        // 检查 token 和过期时间
         const token = uni.getStorageSync('uni_id_token')
         const tokenExpired = uni.getStorageSync('uni_id_token_expired')
-
-        // 如果没有 token 或 token 已过期
-        if (!token || !tokenExpired || tokenExpired < Date.now()) {
-          uni.showModal({
-            title: '提示',
-            content: '登录已过期，请重新登录',
-            showCancel: false,
-            success: () => {
-              uni.reLaunch({
-                url: '/pages/index/index'
-              })
-            }
-          })
-          return false
-        }
-
-        // 如果有 token 但没有用户信息，尝试获取
-        if (!userInfo || !userInfo._id) {
-          try {
-            const cloudUserInfo = uniCloud.getCurrentUserInfo()
-            if (cloudUserInfo && cloudUserInfo.uid) {
-              // 如果云端有用户信息，说明登录有效
-              return true
-            }
-          } catch (e) {
-            console.error('获取云端用户信息失败:', e)
-          }
-
-          // 如果获取不到用户信息，跳转登录
-          uni.showModal({
-            title: '提示',
-            content: '请先登录',
-            showCancel: false,
-            success: () => {
-              uni.reLaunch({
-                url: '/pages/index/index'
-              })
-            }
-          })
-          return false
-        }
-
-        // token 和用户信息都存在，登录有效
-        return true
+        return token && tokenExpired && tokenExpired > Date.now()
       } catch (error) {
-        console.error('检查登录状态失败:', error)
-        // 出错时也允许继续，避免阻塞用户
-        return true
+        return false
       }
+    },
+
+    requireLogin(actionName = '此操作') {
+      if (this.isLoggedIn) return true
+
+      uni.showModal({
+        title: '需要登录',
+        content: `${actionName}需要登录后才能使用，是否现在登录？`,
+        confirmText: '去登录',
+        success: (res) => {
+          if (res.confirm) {
+            uni.setStorageSync('selected_role', 'crew')
+            uni.navigateTo({
+              url: '/uni_modules/uni-id-pages/pages/login/login-withpwd'
+            })
+          }
+        }
+      })
+      return false
     },
 
     async loadUserInfo() {
@@ -700,12 +570,8 @@ export default {
 
     async loadStats() {
       try {
-        // 再次检查token是否存在
         const token = uni.getStorageSync('uni_id_token')
-        if (!token) {
-          console.log('loadStats: token不存在，跳过加载')
-          return
-        }
+        if (!token) return
 
         const userCo = uniCloud.importObject('user-co')
         const res = await userCo.getStats()
@@ -716,12 +582,9 @@ export default {
             ongoing: res.data.in_progress || 0,
             completed: res.data.completed || 0
           }
-          // 更新用户信用分
           if (res.data.credit_score) {
             this.userInfo.credit_score_crew = res.data.credit_score
           }
-        } else {
-          console.warn('获取统计数据失败:', res.message)
         }
       } catch (error) {
         console.error('加载统计失败:', error)
@@ -730,12 +593,8 @@ export default {
 
     async loadRecentOrders() {
       try {
-        // 再次检查token是否存在
         const token = uni.getStorageSync('uni_id_token')
-        if (!token) {
-          console.log('loadRecentOrders: token不存在，跳过加载')
-          return
-        }
+        if (!token) return
 
         const orderCo = uniCloud.importObject('order-co')
         const res = await orderCo.getMyOrders({
@@ -746,16 +605,13 @@ export default {
         if (res.code === 0) {
           this.orderList = res.data.list
         } else if (res.code === 401) {
-          console.log('loadRecentOrders: 未授权，跳转到首页')
           uni.reLaunch({
             url: '/pages/index/index'
           })
         }
       } catch (error) {
         console.error('加载订单失败:', error)
-        // 如果是登录相关错误，跳转到首页
         if (error.message && error.message.includes('登录')) {
-          console.log('loadRecentOrders: 登录错误，跳转到首页')
           uni.reLaunch({
             url: '/pages/index/index'
           })
@@ -764,25 +620,28 @@ export default {
     },
 
     goToPostOrder() {
+      if (!this.requireLogin('发布需求')) return
       uni.navigateTo({
         url: '/pages/crew/post_order'
       })
     },
 
     goToOrderList() {
+      if (!this.requireLogin('查看订单')) return
       uni.navigateTo({
         url: '/pages/crew/order_list'
       })
     },
 
     goToOrderDetail(orderId) {
+      if (!this.requireLogin('查看订单详情')) return
       uni.navigateTo({
         url: `/pages/crew/order_detail?id=${orderId}`
       })
     },
 
-    // ========== 个人资料 ==========
     goToProfile() {
+      if (!this.requireLogin('查看个人中心')) return
       uni.navigateTo({
         url: '/pages/crew/profile'
       })
@@ -800,23 +659,6 @@ export default {
       if (score >= 110) return '优质剧组'
       if (score >= 90) return '良好'
       return '普通'
-    },
-
-    getCreditLevelClass(score) {
-      if (score >= 130) return 'level-gold'
-      if (score >= 110) return 'level-silver'
-      return 'level-normal'
-    },
-
-    getStatusClass(status) {
-      const classMap = {
-        0: 'status-pending',
-        1: 'status-ongoing',
-        2: 'status-payment',
-        3: 'status-completed',
-        4: 'status-canceled'
-      }
-      return classMap[status] || ''
     },
 
     getStatusText(status) {
@@ -862,7 +704,7 @@ export default {
   height: 100%;
 }
 
-// ========== 我的图标（地图覆盖层） ==========
+// ========== 我的图标 ==========
 .my-profile-icon-crew {
   position: absolute;
   left: 32rpx;
@@ -909,33 +751,6 @@ export default {
   margin-top: 4rpx;
 }
 
-.map-controls {
-  position: absolute;
-  right: 32rpx;
-  top: 200rpx;
-  display: flex;
-  flex-direction: column;
-  gap: 16rpx;
-}
-
-.control-btn {
-  width: 80rpx;
-  height: 80rpx;
-  background-color: $white;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.1);
-}
-
-.control-icon-text {
-  font-family: 'uniicons';
-  font-size: 40rpx;
-  color: #333;
-  line-height: 1;
-}
-
 // ========== 底部抽屉 ==========
 .drawer-container {
   position: fixed;
@@ -944,14 +759,9 @@ export default {
   bottom: 0;
   background-color: $bg-secondary;
   border-radius: $border-radius-lg $border-radius-lg 0 0;
-  max-height: 40vh;
-  transition: max-height 0.3s ease;
   z-index: $z-index-drawer;
   box-shadow: 0 -4rpx 16rpx rgba(0, 0, 0, 0.3);
-
-  &.drawer-expanded {
-    max-height: 80vh;
-  }
+  will-change: height;
 }
 
 .drawer-handle-area {
@@ -967,8 +777,8 @@ export default {
 }
 
 .drawer-content {
-  height: calc(100% - 60rpx);
   padding: 0 $spacing-base $spacing-base;
+  box-sizing: border-box;
 }
 
 // ========== 搜索栏 ==========
@@ -996,36 +806,23 @@ export default {
   @include flex-center;
 }
 
-// ========== 推荐演员（收起状态） ==========
-.recommended-actors {
-  padding: $spacing-sm 0;
-}
-
-.section-title {
-  display: flex;
-  align-items: baseline;
-  gap: $spacing-xs;
+// ========== 搜索结果 ==========
+.search-results {
   margin-bottom: $spacing-base;
-
-  .title-text {
-    font-size: $font-size-lg;
-    font-weight: $font-weight-bold;
-    color: $text-primary;
-  }
-
-  .title-count {
-    font-size: $font-size-sm;
-    color: $text-secondary;
-  }
 }
 
-.actor-cards {
+.result-count {
+  font-size: $font-size-sm;
+  color: $text-secondary;
+}
+
+.search-list {
   display: flex;
   flex-direction: column;
-  gap: $spacing-base;
+  gap: $spacing-sm;
 }
 
-.actor-card-mini {
+.search-item {
   display: flex;
   align-items: center;
   background-color: $bg-tertiary;
@@ -1039,8 +836,8 @@ export default {
 }
 
 .actor-avatar {
-  width: 100rpx;
-  height: 100rpx;
+  width: 80rpx;
+  height: 80rpx;
   border-radius: $border-radius-circle;
   background-color: $gray-4;
 }
@@ -1074,20 +871,6 @@ export default {
   color: $gray-3;
 }
 
-.actor-tags {
-  display: flex;
-  gap: 8rpx;
-}
-
-.skill-tag {
-  padding: 4rpx 12rpx;
-  background-color: rgba($primary-color, 0.15);
-  border: 1rpx solid $primary-color;
-  border-radius: $border-radius-sm;
-  color: $primary-color;
-  font-size: $font-size-xs;
-}
-
 .credit-badge {
   padding: 8rpx 16rpx;
   border-radius: $border-radius-sm;
@@ -1107,11 +890,9 @@ export default {
   }
 }
 
-.empty-actors {
-  @include flex-center;
-  @include flex-column;
-  padding: $spacing-xxl 0;
-  gap: $spacing-base;
+.empty-search {
+  padding: $spacing-lg 0;
+  text-align: center;
 
   .empty-text {
     font-size: $font-size-base;
@@ -1119,110 +900,14 @@ export default {
   }
 }
 
-// ========== 展开状态内容 ==========
-.expanded-content {
-  display: flex;
-  flex-direction: column;
-  gap: $spacing-lg;
-}
-
-// 统计卡片（紧凑版）
-.stats-compact {
-  display: flex;
-  background-color: $bg-tertiary;
-  border-radius: $border-radius-base;
-  padding: $spacing-base;
-}
-
-.stat-item-compact {
-  flex: 1;
-  @include flex-center;
-  @include flex-column;
-  gap: 8rpx;
-
-  .stat-value-compact {
-    font-size: 40rpx;
-    font-weight: $font-weight-bold;
-    color: $primary-color;
-    font-family: $font-family-monospace;
-  }
-
-  .stat-label-compact {
-    font-size: $font-size-xs;
-    color: $text-secondary;
-  }
-}
-
-.stat-divider-compact {
-  width: 1rpx;
-  background-color: rgba(255, 255, 255, 0.1);
-  margin: 0 $spacing-base;
-}
-
-// 筛选器
-.filter-section {
+// ========== 主内容区 ==========
+.main-content {
   display: flex;
   flex-direction: column;
   gap: $spacing-base;
 }
 
-.filter-row {
-  display: flex;
-  align-items: flex-start;
-  gap: $spacing-base;
-
-  .filter-label {
-    width: 120rpx;
-    font-size: $font-size-base;
-    color: $text-secondary;
-    padding-top: 8rpx;
-  }
-
-  .filter-options {
-    flex: 1;
-    display: flex;
-    flex-wrap: wrap;
-    gap: $spacing-sm;
-  }
-
-  .filter-chip {
-    padding: 8rpx 20rpx;
-    background-color: $bg-tertiary;
-    border: 1rpx solid transparent;
-    border-radius: $border-radius-base;
-    color: $text-secondary;
-    font-size: $font-size-sm;
-
-    &.active {
-      background-color: rgba($primary-color, 0.15);
-      border-color: $primary-color;
-      color: $primary-color;
-    }
-  }
-
-  .filter-range {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: $spacing-sm;
-
-    .range-input {
-      flex: 1;
-      background-color: $bg-tertiary;
-      border-radius: $border-radius-sm;
-      padding: 8rpx 16rpx;
-      color: $text-primary;
-      font-size: $font-size-base;
-      text-align: center;
-    }
-
-    .range-separator {
-      color: $text-secondary;
-    }
-  }
-}
-
-// 最近订单（紧凑版）
+// ========== 最近订单 ==========
 .recent-orders-compact {
   padding: $spacing-base;
   background-color: $bg-tertiary;
@@ -1314,6 +999,10 @@ export default {
     font-weight: $font-weight-bold;
     color: $primary-color;
     font-family: $font-family-monospace;
+
+    &::before {
+      content: '\00A5';
+    }
   }
 }
 
@@ -1327,7 +1016,7 @@ export default {
   }
 }
 
-// 信用分（紧凑版）
+// ========== 信用分 ==========
 .credit-section-compact {
   display: flex;
   align-items: center;

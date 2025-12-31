@@ -42,7 +42,7 @@
 
         <view class="info-row">
           <text class="info-label">需求人数</text>
-          <text class="info-value highlight">{{ job.actor_count }}人</text>
+          <text class="info-value highlight">{{ job.actor_count || 1 }}人</text>
         </view>
 
         <view class="info-row" v-if="job.work_start_time">
@@ -159,8 +159,8 @@
           </view>
         </view>
 
-        <button class="grab-btn" @tap="grabJob" :disabled="isGrabbing">
-          {{ isGrabbing ? '抢单中...' : '立即抢单' }}
+        <button class="grab-btn" @tap="goToTracking">
+          履约追踪
         </button>
       </view>
     </view>
@@ -548,6 +548,12 @@ export default {
 
     goBack() {
       uni.navigateBack()
+    },
+
+    goToTracking() {
+      uni.navigateTo({
+        url: `/pages/actor/order_tracking?id=${this.jobId}`
+      })
     }
   }
 }

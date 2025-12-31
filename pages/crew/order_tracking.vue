@@ -56,40 +56,10 @@
         </view>
       </view>
 
-      <!-- 轨迹时间线 -->
-      <view class="timeline-section">
-        <view class="section-title">
-          <text>履约进度</text>
-          <text class="refresh-btn" @tap="refreshTracks">刷新</text>
-        </view>
-
-        <view class="timeline">
-          <view
-            v-for="(track, index) in trackList"
-            :key="index"
-            class="timeline-item"
-            :class="{ active: index === 0 }"
-          >
-            <view class="timeline-dot"></view>
-            <view class="timeline-line" v-if="index < trackList.length - 1"></view>
-            <view class="timeline-content">
-              <text class="timeline-time">{{ formatTime(track.create_time) }}</text>
-              <text class="timeline-desc">{{ track.description || getTrackDesc(track) }}</text>
-            </view>
-          </view>
-
-          <!-- 空状态 -->
-          <view v-if="trackList.length === 0" class="empty-timeline">
-            <text>暂无轨迹记录</text>
-          </view>
-        </view>
-      </view>
-
       <!-- 操作按钮 -->
       <view class="bottom-actions">
         <button class="btn-secondary" @tap="goToDetail">查看订单</button>
-        <button class="btn-primary" @tap="confirmArrival" v-if="canConfirmArrival">确认到达</button>
-        <button class="btn-primary" @tap="completeOrder" v-else-if="canComplete">确认完成</button>
+        <button class="btn-primary" @tap="confirmArrival" v-if="canConfirmArrival">确认完成</button>
       </view>
     </view>
   </view>
@@ -122,10 +92,8 @@ export default {
 
   computed: {
     canConfirmArrival() {
-      return this.order.order_status === 1 && !this.order.arrival_confirmed
-    },
-    canComplete() {
-      return this.order.order_status === 1 && this.order.arrival_confirmed
+      // 订单进行中且演员已打卡时可以确认完成
+      return this.order.order_status === 1 && this.order.arrive_time
     }
   },
 
@@ -386,13 +354,6 @@ export default {
       }
     },
 
-    refreshTracks() {
-      uni.showLoading({ title: '刷新中...' })
-      this.loadTracks().finally(() => {
-        uni.hideLoading()
-      })
-    },
-
     onMarkerTap(e) {
       const markerId = e.detail.markerId
       if (markerId === 1) {
@@ -438,25 +399,45 @@ export default {
     },
 
     async confirmArrival() {
-      try {
-        // TODO: 调用确认到达接口
-        uni.showModal({
-          title: '确认到达',
-          content: '确认演员已到达集合地点？',
-          success: async (res) => {
-            if (res.confirm) {
-              // 调用接口
+      uni.showModal({
+        title: '确认完成',
+        content: '确认演员已到达并完成工作？确认后订单将标记为已完成。',
+        success: async (res) => {
+          if (res.confirm) {
+            try {
+              uni.showLoading({ title: '处理中...', mask: true })
+              const orderCo = uniCloud.importObject('order-co')
+              const result = await orderCo.completeOrder(this.orderId)
+              uni.hideLoading()
+
+              if (result.code === 0) {
+                uni.showToast({
+                  title: '订单已完成',
+                  icon: 'success'
+                })
+                this.order.order_status = 3
+                setTimeout(() => {
+                  uni.navigateTo({
+                    url: `/pages/crew/order_detail?id=${this.orderId}`
+                  })
+                }, 1500)
+              } else {
+                uni.showToast({
+                  title: result.message || '操作失败',
+                  icon: 'none'
+                })
+              }
+            } catch (error) {
+              uni.hideLoading()
+              console.error('确认完成失败:', error)
               uni.showToast({
-                title: '确认成功',
-                icon: 'success'
+                title: '网络错误，请重试',
+                icon: 'none'
               })
-              this.order.arrival_confirmed = true
             }
           }
-        })
-      } catch (error) {
-        console.error('确认到达失败:', error)
-      }
+        }
+      })
     },
 
     async completeOrder() {
@@ -630,100 +611,6 @@ export default {
       font-size: $font-size-sm;
       color: $text-secondary;
     }
-  }
-}
-
-// 轨迹时间线
-.timeline-section {
-  padding: $spacing-base 0;
-
-  .section-title {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: $spacing-base;
-
-    text {
-      font-size: $font-size-base;
-      font-weight: $font-weight-bold;
-      color: $text-primary;
-    }
-
-    .refresh-btn {
-      font-size: $font-size-sm;
-      color: $primary-color;
-      font-weight: $font-weight-normal;
-    }
-  }
-}
-
-.timeline {
-  position: relative;
-  padding-left: $spacing-lg;
-}
-
-.timeline-item {
-  position: relative;
-  padding-bottom: $spacing-base;
-
-  &:last-child {
-    padding-bottom: 0;
-  }
-
-  .timeline-dot {
-    position: absolute;
-    left: -$spacing-lg;
-    top: 8rpx;
-    width: 16rpx;
-    height: 16rpx;
-    background-color: $gray-4;
-    border-radius: 50%;
-  }
-
-  .timeline-line {
-    position: absolute;
-    left: calc(-#{$spacing-lg} + 6rpx);
-    top: 24rpx;
-    width: 4rpx;
-    height: calc(100% - 8rpx);
-    background-color: $gray-4;
-  }
-
-  &.active {
-    .timeline-dot {
-      background-color: $primary-color;
-      box-shadow: 0 0 8rpx $primary-color;
-    }
-
-    .timeline-line {
-      background: linear-gradient(180deg, $primary-color 0%, $gray-4 100%);
-    }
-  }
-
-  .timeline-content {
-    @include flex-column;
-    gap: 4rpx;
-
-    .timeline-time {
-      font-size: $font-size-sm;
-      color: $text-hint;
-      font-family: $font-family-monospace;
-    }
-
-    .timeline-desc {
-      font-size: $font-size-base;
-      color: $text-primary;
-    }
-  }
-}
-
-.empty-timeline {
-  padding: $spacing-lg 0;
-  text-align: center;
-
-  text {
-    font-size: $font-size-sm;
-    color: $text-secondary;
   }
 }
 

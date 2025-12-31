@@ -14,33 +14,24 @@
 				<text class="app-subtitle">短剧行业用工平台</text>
 			</view>
 
-			<!-- 未登录时显示登录入口 -->
-			<view v-if="!isLoggedIn" class="login-section">
-				<text class="login-hint">请先登录以继续使用</text>
-				<view class="login-btn" @click="toLogin">
-					<uni-icons type="person" size="24" color="#1A1A2E"></uni-icons>
-					<text class="login-btn-text">立即登录</text>
+			<!-- 角色选择入口（游客和登录用户都可见） -->
+			<view class="role-cards">
+				<view class="role-card actor-card" @click="goToActor">
+					<view class="icon-wrapper">
+						<uni-icons type="person-filled" size="80" color="#FFD700"></uni-icons>
+					</view>
+					<text class="role-title">我是演员</text>
+					<text class="role-desc">寻找演出机会</text>
 				</view>
-			</view>
 
-			<!-- 角色选择入口（登录后显示） -->
-			<view v-else class="role-cards">
-			<view class="role-card actor-card" @click="goToActor">
-				<view class="icon-wrapper">
-					<uni-icons type="person-filled" size="80" color="#FFD700"></uni-icons>
+				<view class="role-card crew-card" @click="goToCrew">
+					<view class="icon-wrapper">
+						<uni-icons type="staff-filled" size="80" color="#FFD700"></uni-icons>
+					</view>
+					<text class="role-title">我是剧组HR</text>
+					<text class="role-desc">寻找合适演员</text>
 				</view>
-				<text class="role-title">我是演员</text>
-				<text class="role-desc">寻找演出机会</text>
 			</view>
-
-			<view class="role-card crew-card" @click="goToCrew">
-				<view class="icon-wrapper">
-					<uni-icons type="staff-filled" size="80" color="#FFD700"></uni-icons>
-				</view>
-				<text class="role-title">我是剧组HR</text>
-				<text class="role-desc">寻找合适演员</text>
-			</view>
-		</view>
 		</template>
 	</view>
 </template>
@@ -49,246 +40,85 @@
 	export default {
 		data() {
 			return {
-				loginType: "username", // 默认使用账号密码登录
-				isCheckingRole: true, // 是否正在检查角色
-				isLoggedIn: false // 是否已登录
+				isCheckingRole: true // 是否正在检查角色
 			}
 		},
 		onLoad() {
-			// 监听登录成功事件 - 处理预设角色的情况
+			// 监听登录成功事件 - 处理登录后返回的情况
 			uni.$on('uni-id-pages-login-success', async (e) => {
 				console.log('监听到登录成功事件', e)
-
-				// 注意: 不要手动存储 token，uni-id-co.login() 成功后 SDK 会自动处理
-				// 手动存储可能会干扰 SDK 的内部 token 管理机制
-
 				// 检查是否有预设角色（用户先选角色再登录的情况）
 				const targetRole = uni.getStorageSync('selected_role')
 				if (targetRole) {
-					console.log('有预设角色，准备设置并跳转:', targetRole)
-					try {
-						// 等待 SDK token 状态同步
-						await this.waitForTokenReady()
-						await this.saveUserRole(targetRole === 'crew' ? 1 : 2)
-						uni.removeStorageSync('selected_role')
-
-						uni.reLaunch({
-							url: targetRole === 'crew' ? '/pages/crew/index' : '/pages/actor/index'
-						})
-					} catch (error) {
-						console.error('设置预设角色失败:', error)
-						uni.removeStorageSync('selected_role')
-					}
-				} else {
-					// 没有预设角色，延迟后重新检查用户状态
-					// 这是为了处理 loginBack 可能没有正确 reLaunch 的情况
-					console.log('无预设角色，延迟后检查用户状态')
-					// 等待 SDK token 状态完全同步后再检查
-					await this.waitForTokenReady()
-					this.checkUserRole()
+					console.log('有预设角色，准备跳转:', targetRole)
+					uni.removeStorageSync('selected_role')
+					uni.reLaunch({
+						url: targetRole === 'crew' ? '/pages/crew/index' : '/pages/actor/index'
+					})
 				}
 			})
 		},
 		onShow() {
-			// 每次显示页面时检查用户角色
-			// 添加小延迟确保 token 已被正确存储（解决 reLaunch 后的时序问题）
-			setTimeout(() => {
-				this.checkUserRole()
-			}, 100)
+			// 每次显示页面时检查是否已登录且有角色
+			this.checkUserRole()
 		},
 		onUnload() {
-			// 移除监听
 			uni.$off('uni-id-pages-login-success')
 		},
 		methods: {
-			// 等待 token 准备就绪（SDK 内部状态同步）
-			waitForTokenReady(maxWait = 1000) {
-				return new Promise((resolve) => {
-					const startTime = Date.now()
-					const checkToken = () => {
-						const userInfo = uniCloud.getCurrentUserInfo()
-						console.log('waitForTokenReady 检查:', userInfo)
-						// 如果有有效的 uid 和未过期的 token，认为准备好了
-						if (userInfo && userInfo.uid && userInfo.tokenExpired > Date.now()) {
-							console.log('Token 已就绪')
-							resolve(true)
-						} else if (Date.now() - startTime >= maxWait) {
-							console.log('等待 token 超时')
-							resolve(false)
-						} else {
-							// 继续等待
-							setTimeout(checkToken, 100)
-						}
-					}
-					// 先等待一小段时间让 SDK 完成存储
-					setTimeout(checkToken, 100)
-				})
-			},
-
-			// 检查用户是否已登录且已设置角色
+			// 检查用户是否已登录且已设置角色（仅用于自动跳转）
 			async checkUserRole() {
 				console.log('checkUserRole 开始执行')
 				this.isCheckingRole = true
 
 				try {
-					// 使用 uniCloud 提供的方法获取当前用户信息（更可靠）
 					const currentUserInfo = uniCloud.getCurrentUserInfo()
-					console.log('currentUserInfo:', JSON.stringify(currentUserInfo))
 
-					// 检查 token 是否有效（确保 currentUserInfo 存在且有效）
+					// 如果没有有效token，直接显示角色选择界面（游客模式）
 					if (!currentUserInfo || !currentUserInfo.tokenExpired || currentUserInfo.tokenExpired < Date.now()) {
-						console.log('token无效或过期，显示登录入口')
-						this.isLoggedIn = false
+						console.log('未登录或token过期，显示角色选择界面（游客模式）')
 						this.isCheckingRole = false
 						return
 					}
 
-					// 本地有有效token，向服务端验证并获取用户信息
-					console.log('向服务端验证token...')
+					// 已登录，检查是否已设置角色
 					const userCo = uniCloud.importObject('user-co')
 					const res = await userCo.getProfile()
-					console.log('getProfile 返回:', res)
 
-					// 服务端返回未登录，清除本地状态
-					if (res.code === 401 || res.code !== 0) {
-						console.log('服务端验证失败，清除登录状态')
-						this.clearLoginState()
-						this.isCheckingRole = false
-						return
-					}
-
-					// 验证成功，用户已登录
-					this.isLoggedIn = true
-					console.log('用户已登录，isLoggedIn =', this.isLoggedIn)
-
-					if (res.data) {
+					if (res.code === 0 && res.data) {
 						const userRole = res.data.user_role
-						console.log('用户角色 user_role =', userRole)
-
-						// 如果用户已设置角色，直接跳转到对应端
+						// 如果已设置角色，自动跳转到对应端
 						if (userRole === 1) {
-							console.log('用户已是剧组角色，跳转到剧组端')
-							uni.reLaunch({
-								url: '/pages/crew/index'
-							})
+							uni.reLaunch({ url: '/pages/crew/index' })
 							return
 						} else if (userRole === 2) {
-							console.log('用户已是演员角色，跳转到演员端')
-							uni.reLaunch({
-								url: '/pages/actor/index'
-							})
+							uni.reLaunch({ url: '/pages/actor/index' })
 							return
 						}
-						// user_role === 0 或 undefined 表示未设置角色，显示选择界面
-						console.log('用户未设置角色，将显示角色选择界面')
 					}
 				} catch (error) {
 					console.error('检查用户角色失败:', error)
-					this.clearLoginState()
 				}
 
 				this.isCheckingRole = false
-				console.log('checkUserRole 执行完毕, isCheckingRole =', this.isCheckingRole, ', isLoggedIn =', this.isLoggedIn)
 			},
 
-			// 清除登录状态
-			clearLoginState() {
-				this.isLoggedIn = false
-				uni.removeStorageSync('uni_id_token')
-				uni.removeStorageSync('uni_id_token_expired')
+			// 跳转到剧组端（游客可直接进入浏览）
+			goToCrew() {
+				// 记录用户选择的角色，登录后使用
+				uni.setStorageSync('selected_role', 'crew')
+				uni.reLaunch({
+					url: '/pages/crew/index'
+				})
 			},
 
-			// 保存用户角色到数据库
-			async saveUserRole(role) {
-				try {
-					const userCo = uniCloud.importObject('user-co')
-					const res = await userCo.setRole(role)
-					console.log('设置用户角色结果:', res)
-					return res
-				} catch (error) {
-					console.error('设置用户角色失败:', error)
-					return { code: 500, message: error.message }
-				}
-			},
-
-			// 跳转到剧组端
-			async goToCrew() {
-				try {
-					uni.showLoading({ title: '设置中...' })
-					const res = await this.saveUserRole(1) // 1 = 剧组
-					uni.hideLoading()
-
-					if (res.code === 0) {
-						// 设置成功，跳转到剧组端
-						uni.reLaunch({
-							url: '/pages/crew/index'
-						})
-					} else if (res.code === 400) {
-						// 角色已设置，检查实际角色并跳转
-						await this.checkUserRole()
-					} else {
-						uni.showToast({
-							title: res.message || '设置失败',
-							icon: 'none'
-						})
-					}
-				} catch (error) {
-					console.error('设置角色失败:', error)
-					uni.hideLoading()
-					// 可能是登录过期，重新检查状态
-					this.isLoggedIn = false
-					uni.showToast({
-						title: '登录已过期，请重新登录',
-						icon: 'none'
-					})
-				}
-			},
-
-			// 跳转到演员端
-			async goToActor() {
-				try {
-					uni.showLoading({ title: '设置中...' })
-					const res = await this.saveUserRole(2) // 2 = 演员
-					uni.hideLoading()
-
-					if (res.code === 0) {
-						// 设置成功，跳转到演员端
-						uni.reLaunch({
-							url: '/pages/actor/index'
-						})
-					} else if (res.code === 400) {
-						// 角色已设置，检查实际角色并跳转
-						await this.checkUserRole()
-					} else {
-						uni.showToast({
-							title: res.message || '设置失败',
-							icon: 'none'
-						})
-					}
-				} catch (error) {
-					console.error('设置角色失败:', error)
-					uni.hideLoading()
-					// 可能是登录过期，重新检查状态
-					this.isLoggedIn = false
-					uni.showToast({
-						title: '登录已过期，请重新登录',
-						icon: 'none'
-					})
-				}
-			},
-
-			toLogin() {
-				if (this.loginType == 'username') {
-					uni.navigateTo({
-						url: "/uni_modules/uni-id-pages/pages/login/login-withpwd"
-					})
-				} else {
-					uni.navigateTo({
-						url: "/uni_modules/uni-id-pages/pages/login/login-withoutpwd?type=" + this.loginType,
-						animationType:"none",
-						animationDuration:0
-					})
-				}
+			// 跳转到演员端（游客可直接进入浏览）
+			goToActor() {
+				// 记录用户选择的角色，登录后使用
+				uni.setStorageSync('selected_role', 'actor')
+				uni.reLaunch({
+					url: '/pages/actor/index'
+				})
 			}
 		}
 	}
