@@ -48,6 +48,11 @@
 			// #endif
 		},
 		methods: {
+			// 获取角色文本
+			getRoleText() {
+				const selectedRole = uni.getStorageSync('selected_role') || ''
+				return selectedRole === 'actor' ? '演员' : (selectedRole === 'crew' ? '剧组' : '')
+			},
 			submit() { //完成并提交
 				const uniIdCo = uniCloud.importObject("uni-id-co", {
 					errorOptions: {
@@ -62,11 +67,44 @@
 						duration: 3000
 					});
 				}
+
+				// 登录前确认角色
+				const roleText = this.getRoleText()
+				if (roleText) {
+					uni.showModal({
+						title: '登录确认',
+						content: `您即将登录/注册的账号是${roleText}账号，如果是新用户注册后角色不可更改，是否继续？`,
+						confirmText: '继续',
+						cancelText: '取消',
+						success: (res) => {
+							if (res.confirm) {
+								this.doLogin(uniIdCo)
+							}
+						}
+					})
+				} else {
+					this.doLogin(uniIdCo)
+				}
+			},
+			doLogin(uniIdCo) {
 				uniIdCo.loginBySms({
 					"mobile": this.phone,
 					"code": this.code,
 					"captcha": this.captcha
-				}).then(e => {
+				}).then(async e => {
+					// 检查是否需要设置角色
+					const selectedRole = uni.getStorageSync('selected_role') || ''
+					if (selectedRole) {
+						try {
+							const userCo = uniCloud.importObject('user-co')
+							const role = selectedRole === 'crew' ? 1 : 2 // crew=1, actor=2
+							const setRoleResult = await userCo.setRole(role)
+							console.log('角色设置结果:', setRoleResult)
+						} catch (err) {
+							// 可能是老用户已经有角色了，忽略错误
+							console.log('角色设置跳过（可能已存在）:', err.message)
+						}
+					}
 					this.loginSuccess(e)
 				}).catch(e => {
 					if (e.errCode == 'uni-id-captcha-required') {

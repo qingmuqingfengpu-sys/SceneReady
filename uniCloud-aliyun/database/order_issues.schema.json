@@ -1,0 +1,113 @@
+{
+  "bsonType": "object",
+  "required": ["order_id", "reporter_id", "issue_type", "report_time"],
+  "permission": {
+    "read": true,
+    "create": "auth.uid != null",
+    "update": false,
+    "delete": false
+  },
+  "properties": {
+    "_id": {
+      "description": "问题记录ID,系统自动生成"
+    },
+    "order_id": {
+      "bsonType": "string",
+      "title": "订单ID",
+      "description": "关联的订单ID",
+      "foreignKey": "orders._id"
+    },
+    "reporter_id": {
+      "bsonType": "string",
+      "title": "上报人ID",
+      "description": "上报问题的用户ID(演员)",
+      "foreignKey": "uni-id-users._id"
+    },
+    "issue_type": {
+      "bsonType": "string",
+      "title": "问题类型",
+      "description": "问题类型: late_warning-迟到预警, cannot_arrive-无法到达, safety_issue-安全问题, other-其他问题",
+      "enum": [
+        {
+          "text": "迟到预警",
+          "value": "late_warning"
+        },
+        {
+          "text": "无法到达",
+          "value": "cannot_arrive"
+        },
+        {
+          "text": "安全问题",
+          "value": "safety_issue"
+        },
+        {
+          "text": "其他问题",
+          "value": "other"
+        }
+      ]
+    },
+    "issue_description": {
+      "bsonType": "string",
+      "title": "问题描述",
+      "description": "问题详细描述(可选)",
+      "trim": "both"
+    },
+    "report_time": {
+      "bsonType": "timestamp",
+      "title": "上报时间",
+      "description": "问题上报的时间",
+      "forceDefaultValue": {
+        "$env": "now"
+      }
+    },
+    "location": {
+      "bsonType": "object",
+      "title": "上报位置",
+      "description": "上报时的位置信息",
+      "properties": {
+        "type": {
+          "bsonType": "string",
+          "description": "GeoJSON类型",
+          "enum": ["Point"]
+        },
+        "coordinates": {
+          "bsonType": "array",
+          "description": "经纬度坐标 [longitude, latitude]",
+          "items": {
+            "bsonType": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        }
+      }
+    },
+    "status": {
+      "bsonType": "string",
+      "title": "处理状态",
+      "description": "问题处理状态: pending-待处理, processed-已处理",
+      "defaultValue": "pending",
+      "enum": [
+        {
+          "text": "待处理",
+          "value": "pending"
+        },
+        {
+          "text": "已处理",
+          "value": "processed"
+        }
+      ]
+    },
+    "process_time": {
+      "bsonType": "timestamp",
+      "title": "处理时间",
+      "description": "问题处理的时间"
+    },
+    "process_result": {
+      "bsonType": "string",
+      "title": "处理结果",
+      "description": "问题处理结果描述",
+      "trim": "both"
+    }
+  },
+  "version": "1.0.0"
+}

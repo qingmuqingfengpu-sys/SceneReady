@@ -119,6 +119,11 @@
 					url
 				})
 			},
+		// 获取角色文本
+			getRoleText() {
+				const selectedRole = uni.getStorageSync('selected_role') || ''
+				return selectedRole === 'actor' ? '演员' : (selectedRole === 'crew' ? '剧组' : '')
+			},
 			/**
 			 * 密码登录
 			 */
@@ -165,7 +170,21 @@
 					data.username = this.username
 				}
 
-				uniIdCo.login(data).then(e => {
+				uniIdCo.login(data).then(async e => {
+					// 检查是否需要设置角色
+					const selectedRole = uni.getStorageSync('selected_role') || ''
+					if (selectedRole) {
+						try {
+							const userCo = uniCloud.importObject('user-co')
+							const role = selectedRole === 'crew' ? 1 : 2 // crew=1, actor=2
+							const setRoleResult = await userCo.setRole(role)
+							console.log('角色设置结果:', setRoleResult)
+						} catch (err) {
+							// 可能是老用户已经有角色了，忽略错误
+							console.log('角色设置跳过（可能已存在）:', err.message)
+						}
+					}
+
 					// 登录成功后跳转到角色选择页，不自动返回上一页
 					this.loginSuccess({
 						...e,

@@ -146,6 +146,14 @@
         </view>
       </view>
 
+      <!-- 订单取消提示 -->
+      <view v-if="isOrderCancelled" class="cancelled-banner">
+        <uni-icons type="info" size="20" color="#FF5252"></uni-icons>
+        <text v-if="cancelledByType === 'crew'">剧组已取消订单</text>
+        <text v-else-if="cancelledByType === 'actor'">您已取消接单</text>
+        <text v-else>订单已取消</text>
+      </view>
+
       <!-- 底部操作按钮 -->
       <view class="bottom-actions">
         <view class="action-left">
@@ -159,7 +167,10 @@
           </view>
         </view>
 
-        <button class="grab-btn" @tap="goToTracking">
+        <button v-if="isOrderCancelled" class="grab-btn disabled" disabled>
+          订单已取消
+        </button>
+        <button v-else class="grab-btn" @tap="goToTracking">
           履约追踪
         </button>
       </view>
@@ -225,6 +236,8 @@ export default {
       markers: [],
       isFavorite: false,
       isGrabbing: false,
+      isOrderCancelled: false,    // 订单是否被取消
+      cancelledByType: '',        // 取消方: 'crew' | 'actor'
       skillMap: {
         'driving': '开车',
         'dancing': '跳舞',
@@ -306,6 +319,17 @@ export default {
 
         if (jobData) {
           this.job = jobData
+
+          // 检查订单是否被取消
+          if (this.job.order_status === 4) {
+            this.isOrderCancelled = true
+            // 判断是谁取消的
+            if (this.job.cancel_by === this.job.publisher_id) {
+              this.cancelledByType = 'crew'
+            } else if (this.job.actor_cancel_reason) {
+              this.cancelledByType = 'actor'
+            }
+          }
 
           // 设置地图位置
           if (this.job.meeting_location) {
@@ -866,6 +890,25 @@ export default {
   }
 }
 
+// 取消提示
+.cancelled-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 24rpx;
+  background-color: rgba(255, 82, 82, 0.1);
+  border-radius: $border-radius-base;
+  border: 1rpx solid rgba(255, 82, 82, 0.3);
+
+  text {
+    font-size: $font-size-base;
+    color: #FF5252;
+    font-weight: $font-weight-bold;
+  }
+}
+
 // 底部操作
 .bottom-actions {
   position: fixed;
@@ -908,6 +951,11 @@ export default {
 
     &[disabled] {
       opacity: 0.6;
+    }
+
+    &.disabled {
+      background: $gray-4;
+      opacity: 0.7;
     }
   }
 }

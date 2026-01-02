@@ -38,7 +38,7 @@
               {{ order.order_type === 1 ? '即时单' : '预约单' }}
             </view>
             <view class="order-status" :class="statusClassMap[order.order_status]">
-              {{ getStatusText(order.order_status) }}
+              {{ getStatusText(order) }}
             </view>
           </view>
 
@@ -303,13 +303,23 @@ export default {
     },
 
     // 工具方法
-    getStatusText(status) {
+    getStatusText(order) {
+      const status = order.order_status
+      // 处理取消状态的细分显示
+      if (status === 4) {
+        if (order.actor_cancel_reason) {
+          return '已取消(无法到达)'
+        }
+        if (order.cancel_by === order.publisher_id) {
+          return '剧组已取消'
+        }
+        return '已取消'
+      }
       const textMap = {
         0: '待接单',
         1: '进行中',
         2: '待结算',
-        3: '已完成',
-        4: '已取消'
+        3: '已完成'
       }
       return textMap[status] || '未知'
     },

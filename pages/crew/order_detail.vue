@@ -140,6 +140,24 @@
         </view>
       </view>
 
+      <!-- 问题上报记录（如果有） -->
+      <view class="info-card issue-card" v-if="orderIssues.length > 0">
+        <view class="card-title">
+          <uni-icons type="info" size="20" color="#FF6B6B"></uni-icons>
+          <text>问题上报记录</text>
+        </view>
+
+        <view class="issue-list">
+          <view class="issue-item" v-for="issue in orderIssues" :key="issue._id">
+            <view class="issue-header">
+              <view class="issue-type-tag" :class="issue.issue_type">{{ getIssueTypeText(issue.issue_type) }}</view>
+              <text class="issue-time">{{ formatIssueTime(issue.report_time) }}</text>
+            </view>
+            <text class="issue-desc" v-if="issue.issue_description">{{ issue.issue_description }}</text>
+          </view>
+        </view>
+      </view>
+
       <!-- 操作按钮 -->
       <view class="action-buttons">
         <!-- 待接单状态 -->
@@ -253,6 +271,13 @@ export default {
         'accommodation': '提供住宿',
         'tea': '下午茶',
         'insurance': '购买保险'
+      },
+      orderIssues: [],
+      issueTypeMap: {
+        'late_warning': '迟到预警',
+        'cannot_arrive': '无法到达',
+        'safety_issue': '安全问题',
+        'other': '其他问题'
       }
     }
   },
@@ -307,6 +332,9 @@ export default {
           if (this.order.receiver_id) {
             await this.loadReceiverInfo(this.order.receiver_id)
           }
+
+          // 加载问题上报记录
+          await this.loadOrderIssues()
         }
       } catch (error) {
         console.error('加载订单详情失败:', error)
@@ -340,6 +368,36 @@ export default {
       } catch (error) {
         console.error('加载接单人信息失败:', error)
       }
+    },
+
+    async loadOrderIssues() {
+      try {
+        const db = uniCloud.database()
+        const res = await db.collection('order_issues')
+          .where({ order_id: this.orderId })
+          .orderBy('report_time', 'desc')
+          .get()
+
+        if (res.result.data) {
+          this.orderIssues = res.result.data
+        }
+      } catch (error) {
+        console.error('加载问题上报失败:', error)
+      }
+    },
+
+    getIssueTypeText(type) {
+      return this.issueTypeMap[type] || '未知'
+    },
+
+    formatIssueTime(timestamp) {
+      if (!timestamp) return ''
+      const date = new Date(timestamp)
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+      const hour = String(date.getHours()).padStart(2, '0')
+      const minute = String(date.getMinutes()).padStart(2, '0')
+      return `${month}-${day} ${hour}:${minute}`
     },
 
     // 状态相关方法
@@ -814,6 +872,72 @@ export default {
     &.credit-normal {
       @include credit-badge('normal');
     }
+  }
+}
+
+// 问题上报记录
+.issue-card {
+  .card-title text {
+    color: #FF6B6B !important;
+  }
+}
+
+.issue-list {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+}
+
+.issue-item {
+  padding: $spacing-sm;
+  background-color: rgba(255, 107, 107, 0.1);
+  border-radius: $border-radius-base;
+  border-left: 4rpx solid #FF6B6B;
+
+  .issue-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: $spacing-xs;
+  }
+
+  .issue-type-tag {
+    padding: 4rpx 12rpx;
+    border-radius: 8rpx;
+    font-size: $font-size-xs;
+    font-weight: $font-weight-medium;
+
+    &.late_warning {
+      background-color: rgba(255, 193, 7, 0.2);
+      color: #FFC107;
+    }
+
+    &.cannot_arrive {
+      background-color: rgba(244, 67, 54, 0.2);
+      color: #F44336;
+    }
+
+    &.safety_issue {
+      background-color: rgba(255, 87, 34, 0.2);
+      color: #FF5722;
+    }
+
+    &.other {
+      background-color: rgba(158, 158, 158, 0.2);
+      color: #9E9E9E;
+    }
+  }
+
+  .issue-time {
+    font-size: $font-size-xs;
+    color: $text-hint;
+  }
+
+  .issue-desc {
+    display: block;
+    font-size: $font-size-sm;
+    color: $text-secondary;
+    line-height: 1.5;
   }
 }
 

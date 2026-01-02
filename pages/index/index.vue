@@ -11,7 +11,7 @@
 			<!-- Logo和标题 -->
 			<view class="header-section">
 				<text class="app-title">SceneReady</text>
-				<text class="app-subtitle">短剧行业用工平台</text>
+				<text class="app-subtitle">西南大学产业研究院创新孵化项目</text>
 			</view>
 
 			<!-- 角色选择入口（游客和登录用户都可见） -->

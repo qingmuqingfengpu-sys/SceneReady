@@ -70,11 +70,16 @@
 				focusNickname: false,
 				focusPassword: false,
 				focusPassword2: false,
-				logo: "/static/logo.png"
+				logo: "/static/logo.png",
+				selectedRole: '' // actor or crew
 			}
 		},
 		onReady() {
 			this.$refs.form.setRules(this.rules)
+		},
+		onLoad() {
+			// 获取用户选择的角色
+			this.selectedRole = uni.getStorageSync('selected_role') || ''
 		},
 		onShow() {
 			// #ifdef H5
@@ -87,6 +92,10 @@
 			// #endif
 		},
 		methods: {
+			// 获取角色文本
+			getRoleText() {
+				return this.selectedRole === 'actor' ? '演员' : (this.selectedRole === 'crew' ? '剧组' : '')
+			},
 			/**
 			 * 触发表单提交
 			 */
@@ -102,18 +111,50 @@
 					}
 					if (this.needAgreements && !this.agree) {
 						return this.$refs.agreements.popup(() => {
-							this.submitForm(res)
+							this.confirmRoleAndSubmit(res)
 						})
 					}
-					this.submitForm(res)
+					this.confirmRoleAndSubmit(res)
 				}).catch((errors) => {
 					let key = errors[0].key
 					key = key.replace(key[0], key[0].toUpperCase())
 					this['focus' + key] = true
 				})
 			},
+			// 确认角色后再提交
+			confirmRoleAndSubmit(params) {
+				const roleText = this.getRoleText()
+				if (roleText) {
+					// 有选择角色，弹窗确认
+					uni.showModal({
+						title: '注册确认',
+						content: `您即将注册的账号是${roleText}账号，注册后角色不可更改，是否确认注册？`,
+						confirmText: '确认注册',
+						cancelText: '取消',
+						success: (res) => {
+							if (res.confirm) {
+								this.submitForm(params)
+							}
+						}
+					})
+				} else {
+					// 没有选择角色，直接注册
+					this.submitForm(params)
+				}
+			},
 			submitForm(params) {
-				uniIdCo.registerUser(this.formData).then(e => {
+				uniIdCo.registerUser(this.formData).then(async e => {
+						// 注册成功后自动设置角色
+						if (this.selectedRole) {
+							try {
+								const userCo = uniCloud.importObject('user-co')
+								const role = this.selectedRole === 'crew' ? 1 : 2 // crew=1, actor=2
+								await userCo.setRole(role)
+								console.log('角色设置成功:', this.selectedRole)
+							} catch (err) {
+								console.error('角色设置失败:', err)
+							}
+						}
 						this.loginSuccess(e)
 					})
 					.catch(e => {

@@ -194,6 +194,23 @@
       "title": "出发时间",
       "description": "演员点击我已出发的时间"
     },
+    "tracking_started": {
+      "bsonType": "bool",
+      "title": "轨迹追踪开始",
+      "description": "是否已开始轨迹追踪",
+      "defaultValue": false
+    },
+    "tracking_start_time": {
+      "bsonType": "timestamp",
+      "title": "追踪开始时间",
+      "description": "开始轨迹追踪的时间"
+    },
+    "actor_cancel_reason": {
+      "bsonType": "string",
+      "title": "演员取消原因",
+      "description": "演员取消订单的原因(如无法到达)",
+      "trim": "both"
+    },
     "arrive_time": {
       "bsonType": "timestamp",
       "title": "到达时间",

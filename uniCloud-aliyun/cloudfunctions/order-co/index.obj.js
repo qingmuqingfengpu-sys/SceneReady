@@ -489,6 +489,11 @@ module.exports = {
       // 转换金额单位 (分 -> 元)
       order.price_amount_yuan = (order.price_amount / 100).toFixed(2)
 
+      // 添加取消者类型标识
+      if (order.order_status === 4 && order.cancel_by) {
+        order.is_cancelled_by_crew = order.cancel_by === order.publisher_id
+      }
+
       return {
         code: 0,
         data: order
@@ -1329,6 +1334,14 @@ module.exports = {
         }
       }
 
+      // 检查是否已开始轨迹追踪(必须先点击"我已出发")
+      if (!order.tracking_started) {
+        return {
+          code: 400,
+          message: '请先点击"我已出发"开始轨迹追踪'
+        }
+      }
+
       // 计算到集合地点的距离
       let distanceToDestination = null
       if (order.meeting_location && order.meeting_location.coordinates) {
@@ -1922,6 +1935,384 @@ module.exports = {
 
     } catch (error) {
       console.error('评价订单失败:', error)
+      return {
+        code: 500,
+        message: error.message || '系统错误'
+      }
+    }
+  },
+
+  /**
+   * 演员出发 - 开始轨迹追踪
+   * @param {String} orderId 订单ID
+   * @returns {Object} 操作结果
+   */
+  async startDeparture(orderId) {
+    try {
+      const userId = this.authInfo && this.authInfo.uid
+
+      if (!userId) {
+        return {
+          code: 401,
+          message: '请先登录'
+        }
+      }
+
+      // 查询订单
+      const orderRes = await db.collection('orders')
+        .doc(orderId)
+        .get()
+
+      if (!orderRes.data || orderRes.data.length === 0) {
+        return {
+          code: 404,
+          message: '订单不存在'
+        }
+      }
+
+      const order = orderRes.data[0]
+
+      // 权限检查(必须是该订单的演员)
+      if (order.receiver_id !== userId) {
+        return {
+          code: 403,
+          message: '无权操作此订单'
+        }
+      }
+
+      // 订单状态检查(必须是进行中)
+      if (order.order_status !== 1) {
+        return {
+          code: 400,
+          message: '当前订单状态不允许出发'
+        }
+      }
+
+      // 检查是否已经出发
+      if (order.tracking_started) {
+        return {
+          code: 400,
+          message: '您已经点击过出发了'
+        }
+      }
+
+      const now = Date.now()
+
+      // 更新订单
+      await db.collection('orders')
+        .doc(orderId)
+        .update({
+          tracking_started: true,
+          tracking_start_time: now,
+          start_off_time: now,
+          update_time: now
+        })
+
+      return {
+        code: 0,
+        message: '已出发,开始轨迹追踪',
+        data: {
+          start_time: now
+        }
+      }
+
+    } catch (error) {
+      console.error('开始出发失败:', error)
+      return {
+        code: 500,
+        message: error.message || '系统错误'
+      }
+    }
+  },
+
+  /**
+   * 上报问题 - 演员端
+   * @param {String} orderId 订单ID
+   * @param {Object} issueData 问题数据
+   * @returns {Object} 操作结果
+   */
+  async reportIssue(orderId, issueData) {
+    try {
+      const userId = this.authInfo && this.authInfo.uid
+
+      if (!userId) {
+        return {
+          code: 401,
+          message: '请先登录'
+        }
+      }
+
+      const { issue_type, description = '', location } = issueData
+
+      // 校验问题类型
+      const validTypes = ['late_warning', 'cannot_arrive', 'safety_issue', 'other']
+      if (!validTypes.includes(issue_type)) {
+        return {
+          code: 400,
+          message: '无效的问题类型'
+        }
+      }
+
+      // 查询订单
+      const orderRes = await db.collection('orders')
+        .doc(orderId)
+        .get()
+
+      if (!orderRes.data || orderRes.data.length === 0) {
+        return {
+          code: 404,
+          message: '订单不存在'
+        }
+      }
+
+      const order = orderRes.data[0]
+
+      // 权限检查(必须是该订单的演员)
+      if (order.receiver_id !== userId) {
+        return {
+          code: 403,
+          message: '无权操作此订单'
+        }
+      }
+
+      // 订单状态检查
+      if (order.order_status !== 1) {
+        return {
+          code: 400,
+          message: '当前订单状态不允许上报问题'
+        }
+      }
+
+      const now = Date.now()
+
+      // 构建问题记录
+      const issueRecord = {
+        order_id: orderId,
+        reporter_id: userId,
+        issue_type: issue_type,
+        issue_description: description,
+        report_time: now,
+        status: 'pending'
+      }
+
+      // 添加位置信息
+      if (location && location.longitude && location.latitude) {
+        issueRecord.location = {
+          type: 'Point',
+          coordinates: [parseFloat(location.longitude), parseFloat(location.latitude)]
+        }
+      }
+
+      // 插入问题记录
+      await db.collection('order_issues').add(issueRecord)
+
+      // 问题类型对应的消息
+      const messageMap = {
+        'late_warning': '已通知剧组您可能迟到',
+        'safety_issue': '已上报安全问题',
+        'other': '问题已上报',
+        'cannot_arrive': '问题已记录'
+      }
+
+      return {
+        code: 0,
+        message: messageMap[issue_type] || '问题已上报',
+        data: {
+          issue_type: issue_type
+        }
+      }
+
+    } catch (error) {
+      console.error('上报问题失败:', error)
+      return {
+        code: 500,
+        message: error.message || '系统错误'
+      }
+    }
+  },
+
+  /**
+   * 演员取消订单(无法到达)
+   * @param {String} orderId 订单ID
+   * @param {String} reason 取消原因
+   * @returns {Object} 操作结果
+   */
+  async actorCancelOrder(orderId, reason = '无法到达') {
+    try {
+      const userId = this.authInfo && this.authInfo.uid
+
+      if (!userId) {
+        return {
+          code: 401,
+          message: '请先登录'
+        }
+      }
+
+      // 查询订单
+      const orderRes = await db.collection('orders')
+        .doc(orderId)
+        .get()
+
+      if (!orderRes.data || orderRes.data.length === 0) {
+        return {
+          code: 404,
+          message: '订单不存在'
+        }
+      }
+
+      const order = orderRes.data[0]
+
+      // 权限检查(必须是该订单的演员)
+      if (order.receiver_id !== userId) {
+        return {
+          code: 403,
+          message: '无权取消此订单'
+        }
+      }
+
+      // 订单状态检查(必须是进行中)
+      if (order.order_status !== 1) {
+        return {
+          code: 400,
+          message: '当前订单状态不允许取消'
+        }
+      }
+
+      const now = Date.now()
+      const receivers = order.receivers || []
+
+      // 从接单者列表中移除当前演员
+      const newReceivers = receivers.filter(id => id !== userId)
+
+      // 构建更新数据
+      let updateData = {
+        receivers: newReceivers,
+        actor_cancel_reason: reason,
+        update_time: now
+      }
+
+      // 如果接单者列表为空,订单重新变为待接单
+      if (newReceivers.length === 0) {
+        updateData.order_status = 0 // 待接单
+        updateData.receiver_id = null
+        updateData.tracking_started = false
+        updateData.tracking_start_time = null
+        updateData.start_off_time = null
+      } else {
+        // 如果还有其他接单者,更新receiver_id为第一个
+        updateData.receiver_id = newReceivers[0]
+      }
+
+      // 更新订单
+      await db.collection('orders')
+        .doc(orderId)
+        .update(updateData)
+
+      // 扣除演员信用分5分
+      await db.collection('uni-id-users')
+        .doc(userId)
+        .update({
+          credit_score_actor: dbCmd.inc(-5)
+        })
+
+      // 记录问题到order_issues表
+      await db.collection('order_issues').add({
+        order_id: orderId,
+        reporter_id: userId,
+        issue_type: 'cannot_arrive',
+        issue_description: reason,
+        report_time: now,
+        status: 'processed',
+        process_time: now,
+        process_result: '演员已取消接单,订单重新开放'
+      })
+
+      return {
+        code: 0,
+        message: '已取消接单,订单将重新开放给其他演员',
+        data: {
+          order_status: newReceivers.length === 0 ? 0 : 1
+        }
+      }
+
+    } catch (error) {
+      console.error('演员取消订单失败:', error)
+      return {
+        code: 500,
+        message: error.message || '系统错误'
+      }
+    }
+  },
+
+  /**
+   * 获取订单问题上报列表
+   * @param {String} orderId 订单ID
+   * @returns {Object} 问题列表
+   */
+  async getOrderIssues(orderId) {
+    try {
+      const userId = this.authInfo && this.authInfo.uid
+
+      if (!userId) {
+        return {
+          code: 401,
+          message: '请先登录'
+        }
+      }
+
+      // 查询订单
+      const orderRes = await db.collection('orders')
+        .doc(orderId)
+        .get()
+
+      if (!orderRes.data || orderRes.data.length === 0) {
+        return {
+          code: 404,
+          message: '订单不存在'
+        }
+      }
+
+      const order = orderRes.data[0]
+
+      // 权限检查(发布者和接单者都可以查看)
+      if (order.publisher_id !== userId && order.receiver_id !== userId) {
+        return {
+          code: 403,
+          message: '无权查看此订单问题'
+        }
+      }
+
+      // 查询问题列表
+      const issuesRes = await db.collection('order_issues')
+        .where({
+          order_id: orderId
+        })
+        .orderBy('report_time', 'desc')
+        .get()
+
+      const issues = issuesRes.data || []
+
+      // 问题类型映射
+      const typeMap = {
+        'late_warning': '迟到预警',
+        'cannot_arrive': '无法到达',
+        'safety_issue': '安全问题',
+        'other': '其他问题'
+      }
+
+      return {
+        code: 0,
+        data: {
+          list: issues.map(issue => ({
+            ...issue,
+            issue_type_text: typeMap[issue.issue_type] || issue.issue_type
+          })),
+          total: issues.length
+        }
+      }
+
+    } catch (error) {
+      console.error('获取问题列表失败:', error)
       return {
         code: 500,
         message: error.message || '系统错误'

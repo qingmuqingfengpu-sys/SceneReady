@@ -56,6 +56,21 @@
         </view>
       </view>
 
+      <!-- 问题上报列表 -->
+      <view class="issue-section" v-if="orderIssues.length > 0">
+        <view class="issue-header">
+          <uni-icons type="info" size="18" color="#FF6B6B"></uni-icons>
+          <text class="issue-title">演员问题上报</text>
+        </view>
+        <view class="issue-list">
+          <view class="issue-item" v-for="issue in orderIssues" :key="issue._id">
+            <view class="issue-type-tag" :class="issue.issue_type">{{ getIssueTypeText(issue.issue_type) }}</view>
+            <text class="issue-desc" v-if="issue.issue_description">{{ issue.issue_description }}</text>
+            <text class="issue-time">{{ formatTime(issue.report_time) }}</text>
+          </view>
+        </view>
+      </view>
+
       <!-- 操作按钮 -->
       <view class="bottom-actions">
         <button class="btn-secondary" @tap="goToDetail">查看订单</button>
@@ -86,7 +101,10 @@ export default {
       isOnline: false,
       refreshTimer: null,
       statusText: '等待演员出发',
-      distanceText: '距离计算中...'
+      distanceText: '距离计算中...',
+      trackingStarted: false,
+      orderIssues: [],
+      hasNewIssue: false
     }
   },
 
@@ -118,6 +136,13 @@ export default {
         if (res.result.data && res.result.data.length > 0) {
           this.order = res.result.data[0]
 
+          // 检查追踪状态
+          this.trackingStarted = this.order.tracking_started === true
+          if (!this.trackingStarted) {
+            this.statusText = '等待演员出发'
+            this.distanceText = '演员尚未点击"我已出发"'
+          }
+
           // 设置集合地点
           if (this.order.meeting_location) {
             this.meetingLocation = {
@@ -133,8 +158,13 @@ export default {
             await this.loadActorInfo(this.order.receiver_id)
           }
 
-          // 加载轨迹
-          await this.loadTracks()
+          // 加载轨迹（只有演员出发后才有轨迹）
+          if (this.trackingStarted) {
+            await this.loadTracks()
+          }
+
+          // 加载问题上报
+          await this.loadOrderIssues()
         }
       } catch (error) {
         console.error('加载订单信息失败:', error)
@@ -191,6 +221,58 @@ export default {
       } catch (error) {
         console.error('加载轨迹失败:', error)
       }
+    },
+
+    async loadOrderIssues() {
+      try {
+        const db = uniCloud.database()
+        const res = await db.collection('order_issues')
+          .where({ order_id: this.orderId })
+          .orderBy('report_time', 'desc')
+          .get()
+
+        if (res.result.data) {
+          const oldCount = this.orderIssues.length
+          this.orderIssues = res.result.data
+
+          // 检测是否有新问题
+          if (this.orderIssues.length > oldCount && oldCount > 0) {
+            this.hasNewIssue = true
+            this.showIssueNotification(this.orderIssues[0])
+          } else if (this.orderIssues.length > 0 && oldCount === 0) {
+            // 首次加载时如果有问题也提示
+            this.showIssueNotification(this.orderIssues[0])
+          }
+        }
+      } catch (error) {
+        console.error('加载问题上报失败:', error)
+      }
+    },
+
+    showIssueNotification(issue) {
+      const issueTypeMap = {
+        'late_warning': '迟到预警',
+        'cannot_arrive': '无法到达',
+        'safety_issue': '安全问题',
+        'other': '其他问题'
+      }
+      const typeName = issueTypeMap[issue.issue_type] || '问题上报'
+      uni.showModal({
+        title: '演员问题上报',
+        content: `${typeName}${issue.issue_description ? '：' + issue.issue_description : ''}`,
+        showCancel: false,
+        confirmText: '知道了'
+      })
+    },
+
+    getIssueTypeText(type) {
+      const typeMap = {
+        'late_warning': '迟到预警',
+        'cannot_arrive': '无法到达',
+        'safety_issue': '安全问题',
+        'other': '其他问题'
+      }
+      return typeMap[type] || '未知'
     },
 
     updateMapElements() {
@@ -342,8 +424,42 @@ export default {
     },
 
     startRefreshTimer() {
-      this.refreshTimer = setInterval(() => {
-        this.loadTracks()
+      this.refreshTimer = setInterval(async () => {
+        // 刷新订单状态（检查追踪是否开始）
+        try {
+          const db = uniCloud.database()
+          const res = await db.collection('orders').doc(this.orderId).field({
+            tracking_started: true,
+            order_status: true,
+            arrive_time: true
+          }).get()
+
+          if (res.result.data && res.result.data.length > 0) {
+            const orderData = res.result.data[0]
+            this.order.order_status = orderData.order_status
+            this.order.arrive_time = orderData.arrive_time
+
+            // 检查追踪状态变化
+            if (orderData.tracking_started && !this.trackingStarted) {
+              this.trackingStarted = true
+              this.order.tracking_started = true
+              uni.showToast({
+                title: '演员已出发',
+                icon: 'none'
+              })
+            }
+          }
+        } catch (error) {
+          console.error('刷新订单状态失败:', error)
+        }
+
+        // 加载轨迹（仅在已开始追踪时）
+        if (this.trackingStarted) {
+          this.loadTracks()
+        }
+
+        // 加载问题上报
+        this.loadOrderIssues()
       }, 10000) // 每10秒刷新一次
     },
 
@@ -611,6 +727,81 @@ export default {
       font-size: $font-size-sm;
       color: $text-secondary;
     }
+  }
+}
+
+// 问题上报区域
+.issue-section {
+  padding: $spacing-base 0;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.1);
+
+  .issue-header {
+    display: flex;
+    align-items: center;
+    gap: $spacing-xs;
+    margin-bottom: $spacing-sm;
+
+    .issue-title {
+      font-size: $font-size-sm;
+      font-weight: $font-weight-bold;
+      color: #FF6B6B;
+    }
+  }
+
+  .issue-list {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-xs;
+  }
+
+  .issue-item {
+    display: flex;
+    align-items: center;
+    gap: $spacing-sm;
+    padding: $spacing-xs $spacing-sm;
+    background-color: rgba(255, 107, 107, 0.1);
+    border-radius: $border-radius-sm;
+  }
+
+  .issue-type-tag {
+    padding: 4rpx 12rpx;
+    border-radius: 8rpx;
+    font-size: $font-size-xs;
+    font-weight: $font-weight-medium;
+    flex-shrink: 0;
+
+    &.late_warning {
+      background-color: rgba(255, 193, 7, 0.2);
+      color: #FFC107;
+    }
+
+    &.cannot_arrive {
+      background-color: rgba(244, 67, 54, 0.2);
+      color: #F44336;
+    }
+
+    &.safety_issue {
+      background-color: rgba(255, 87, 34, 0.2);
+      color: #FF5722;
+    }
+
+    &.other {
+      background-color: rgba(158, 158, 158, 0.2);
+      color: #9E9E9E;
+    }
+  }
+
+  .issue-desc {
+    flex: 1;
+    font-size: $font-size-xs;
+    color: $text-secondary;
+    @include text-ellipsis;
+  }
+
+  .issue-time {
+    font-size: $font-size-xs;
+    color: $text-hint;
+    flex-shrink: 0;
   }
 }
 

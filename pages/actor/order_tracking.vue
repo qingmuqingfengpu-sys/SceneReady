@@ -112,12 +112,34 @@
         </view>
       </view>
 
+      <!-- 订单取消提示 -->
+      <view v-if="isOrderCancelled" class="cancelled-banner">
+        <uni-icons type="info" size="20" color="#FF5252"></uni-icons>
+        <text v-if="cancelledByType === 'crew'">剧组已取消订单</text>
+        <text v-else-if="cancelledByType === 'actor'">您已取消接单</text>
+        <text v-else>订单已取消</text>
+      </view>
+
       <!-- 操作按钮 -->
-      <view class="bottom-actions">
+      <view class="bottom-actions" v-if="!isOrderCancelled">
         <button class="btn-secondary" @tap="reportIssue">遇到问题</button>
-        <button class="btn-primary waiting" v-if="isCheckedIn && !isCompleted" disabled>待剧组确认</button>
-        <button class="btn-primary completed" @tap="viewDetail" v-else-if="isCompleted">已完成 - 查看详情</button>
-        <button class="btn-primary" @tap="viewDetail" v-else>查看详情</button>
+        <!-- 未出发状态 -->
+        <button v-if="!isStarted" class="btn-primary departure" @tap="startDeparture">
+          我已出发
+        </button>
+        <!-- 已出发但未打卡 -->
+        <button v-else-if="!isCheckedIn" class="btn-primary" :class="{ disabled: !canCheckIn }" :disabled="!canCheckIn" @tap="checkIn">
+          {{ canCheckIn ? '打卡签到' : '未到达集合点' }}
+        </button>
+        <!-- 已打卡但未完成 -->
+        <button v-else-if="!isCompleted" class="btn-primary waiting" disabled>待剧组确认</button>
+        <!-- 已完成 -->
+        <button v-else class="btn-primary completed" @tap="viewDetail">已完成 - 查看详情</button>
+      </view>
+
+      <!-- 订单取消后的返回按钮 -->
+      <view class="bottom-actions" v-else>
+        <button class="btn-secondary" @tap="goBack">返回</button>
       </view>
     </view>
   </view>
@@ -147,7 +169,11 @@ export default {
       canCheckIn: false,
       checkinTime: null,
       trackTimer: null,
-      distanceToMeeting: Infinity
+      distanceToMeeting: Infinity,
+      // 新增状态
+      isStarted: false,           // 是否已出发
+      isOrderCancelled: false,    // 订单是否被取消
+      cancelledByType: ''         // 取消方: 'crew' | 'actor'
     }
   },
 
@@ -155,7 +181,7 @@ export default {
     if (options.id) {
       this.orderId = options.id
       this.loadOrderInfo()
-      this.startTracking()
+      // 不再自动启动轨迹追踪，需要用户点击"我已出发"后才开始
     }
   },
 
@@ -173,6 +199,19 @@ export default {
         if (res.code === 0 && res.data) {
           this.order = res.data
 
+          // 检查订单是否被取消
+          if (this.order.order_status === 4) {
+            this.isOrderCancelled = true
+            // 判断是谁取消的
+            if (this.order.is_cancelled_by_crew) {
+              this.cancelledByType = 'crew'
+            } else if (this.order.actor_cancel_reason) {
+              this.cancelledByType = 'actor'
+            }
+            this.stopTracking()
+            return
+          }
+
           // 设置集合地点
           if (this.order.meeting_location) {
             this.meetingLocation = {
@@ -188,6 +227,16 @@ export default {
 
           // 检查订单完成状态
           this.isCompleted = this.order.order_status === 3
+
+          // 检查是否已出发（开始轨迹追踪）
+          if (this.order.tracking_started) {
+            this.isStarted = true
+            // 已出发，自动开始轨迹追踪
+            this.startTracking()
+          } else {
+            // 未出发，先获取一次位置用于显示
+            this.getMyLocation()
+          }
 
           // 加载剧组信息
           if (this.order.publisher_id) {
@@ -523,13 +572,138 @@ export default {
       uni.showActionSheet({
         itemList: ['迟到预警', '无法到达', '安全问题', '其他问题'],
         success: (res) => {
-          const issues = ['迟到预警', '无法到达', '安全问题', '其他问题']
-          const selected = issues[res.tapIndex]
-          // TODO: 提交问题
+          const issueTypes = ['late_warning', 'cannot_arrive', 'safety_issue', 'other']
+          const issueType = issueTypes[res.tapIndex]
+
+          if (issueType === 'cannot_arrive') {
+            // 无法到达需要特殊处理
+            this.handleCannotArrive()
+          } else {
+            // 其他问题类型直接上报
+            this.submitIssue(issueType)
+          }
+        }
+      })
+    },
+
+    async handleCannotArrive() {
+      uni.showModal({
+        title: '确认无法到达',
+        content: '确认后您的接单将被取消，订单将重新开放给其他演员。\n\n注意：取消接单将扣除5分信用分。',
+        confirmText: '确认取消',
+        confirmColor: '#FF5252',
+        success: async (modalRes) => {
+          if (modalRes.confirm) {
+            try {
+              uni.showLoading({ title: '处理中...', mask: true })
+
+              const orderCo = uniCloud.importObject('order-co')
+              const res = await orderCo.actorCancelOrder(this.orderId, '无法到达')
+
+              uni.hideLoading()
+
+              if (res.code === 0) {
+                uni.showToast({
+                  title: '已取消接单',
+                  icon: 'success'
+                })
+                setTimeout(() => {
+                  uni.navigateBack()
+                }, 1500)
+              } else {
+                uni.showToast({
+                  title: res.message || '操作失败',
+                  icon: 'none'
+                })
+              }
+            } catch (error) {
+              uni.hideLoading()
+              console.error('取消接单失败:', error)
+              uni.showToast({
+                title: '网络错误',
+                icon: 'none'
+              })
+            }
+          }
+        }
+      })
+    },
+
+    async submitIssue(issueType) {
+      try {
+        const orderCo = uniCloud.importObject('order-co')
+        const issueData = {
+          issue_type: issueType,
+          description: ''
+        }
+
+        // 添加位置信息
+        if (this.myLocation) {
+          issueData.location = {
+            longitude: this.myLocation.longitude,
+            latitude: this.myLocation.latitude
+          }
+        }
+
+        const res = await orderCo.reportIssue(this.orderId, issueData)
+
+        if (res.code === 0) {
           uni.showToast({
-            title: '已收到反馈',
+            title: res.message || '已上报',
             icon: 'success'
           })
+        } else {
+          uni.showToast({
+            title: res.message || '上报失败',
+            icon: 'none'
+          })
+        }
+      } catch (error) {
+        console.error('上报问题失败:', error)
+        uni.showToast({
+          title: '网络错误',
+          icon: 'none'
+        })
+      }
+    },
+
+    async startDeparture() {
+      uni.showModal({
+        title: '确认出发',
+        content: '请保持定位权限开启，追踪过程中请勿退出或切换小程序。',
+        confirmText: '我已出发',
+        success: async (res) => {
+          if (res.confirm) {
+            try {
+              uni.showLoading({ title: '确认中...', mask: true })
+
+              const orderCo = uniCloud.importObject('order-co')
+              const result = await orderCo.startDeparture(this.orderId)
+
+              uni.hideLoading()
+
+              if (result.code === 0) {
+                this.isStarted = true
+                this.startTracking()
+                uni.showToast({
+                  title: '已出发，开始追踪',
+                  icon: 'success'
+                })
+              } else {
+                uni.showToast({
+                  title: result.message || '操作失败',
+                  icon: 'none'
+                })
+              }
+            } catch (error) {
+              uni.hideLoading()
+              console.error('确认出发失败:', error)
+              uni.showToast({
+                title: '网络错误',
+                icon: 'none'
+              })
+            }
+          }
         }
       })
     },
@@ -563,6 +737,10 @@ export default {
       uni.navigateTo({
         url: `/pages/actor/job_detail?id=${this.orderId}`
       })
+    },
+
+    goBack() {
+      uni.navigateBack()
     }
   }
 }
@@ -835,6 +1013,25 @@ export default {
   }
 }
 
+// 取消提示
+.cancelled-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: $spacing-sm;
+  padding: $spacing-base;
+  margin-bottom: $spacing-base;
+  background-color: rgba(#FF5252, 0.1);
+  border-radius: $border-radius-base;
+  border: 1rpx solid rgba(#FF5252, 0.3);
+
+  text {
+    font-size: $font-size-base;
+    color: #FF5252;
+    font-weight: $font-weight-bold;
+  }
+}
+
 // 底部操作
 .bottom-actions {
   display: flex;
@@ -853,6 +1050,10 @@ export default {
   .btn-primary {
     @include button-primary;
 
+    &.departure {
+      background: linear-gradient(135deg, #2979FF 0%, #64B5F6 100%);
+    }
+
     &.completed {
       background: linear-gradient(135deg, #4CAF50 0%, #81C784 100%);
     }
@@ -860,6 +1061,11 @@ export default {
     &.waiting {
       background: linear-gradient(135deg, #FF9800 0%, #FFB74D 100%);
       opacity: 0.8;
+    }
+
+    &.disabled {
+      opacity: 0.5;
+      background: $gray-4;
     }
   }
 

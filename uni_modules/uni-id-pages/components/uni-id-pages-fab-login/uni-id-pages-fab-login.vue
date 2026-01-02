@@ -221,6 +221,11 @@
 					console.log('unexpected path:' + path);
 				}
 			},
+			// 获取角色文本
+			getRoleText() {
+				const selectedRole = uni.getStorageSync('selected_role') || ''
+				return selectedRole === 'actor' ? '演员' : (selectedRole === 'crew' ? '剧组' : '')
+			},
 			async login_before(type, navigateBack = true, options = {}) {
 				console.log(type);
 				if (["qq",
@@ -237,6 +242,26 @@
 						icon: 'none',
 						duration: 3000
 					});
+				}
+
+				// 第三方登录前确认角色（微信等可能是新用户注册）
+				const selectedRole = uni.getStorageSync('selected_role') || ''
+				const roleText = this.getRoleText()
+				if (roleText && ['weixin', 'apple', 'qq'].includes(type)) {
+					const confirmed = await new Promise((resolve) => {
+						uni.showModal({
+							title: '登录确认',
+							content: `您即将登录/注册的账号是${roleText}账号，如果是新用户注册后角色不可更改，是否继续？`,
+							confirmText: '继续',
+							cancelText: '取消',
+							success: (res) => {
+								resolve(res.confirm)
+							}
+						})
+					})
+					if (!confirmed) {
+						return
+					}
 				}
 
 				// #ifdef APP
@@ -425,8 +450,23 @@
 				const uniIdCo = uniCloud.importObject("uni-id-co",{
 					customUI:true
 				})
-				uniIdCo[action](params).then(result => {
+				uniIdCo[action](params).then(async result => {
 					console.log('login success:', result);
+
+					// 检查是否需要设置角色（新用户注册的情况）
+					const selectedRole = uni.getStorageSync('selected_role') || ''
+					if (selectedRole) {
+						try {
+							const userCo = uniCloud.importObject('user-co')
+							const role = selectedRole === 'crew' ? 1 : 2 // crew=1, actor=2
+							const setRoleResult = await userCo.setRole(role)
+							console.log('角色设置结果:', setRoleResult)
+						} catch (err) {
+							// 可能是老用户已经有角色了，忽略错误
+							console.log('角色设置跳过（可能已存在）:', err.message)
+						}
+					}
+
 					uni.showToast({
 						title: '登录成功',
 						icon: 'none',
