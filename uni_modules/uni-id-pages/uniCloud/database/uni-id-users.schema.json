@@ -467,6 +467,106 @@
 				"read": "'READ_UNI_ID_USERS' in auth.permission",
 				"write": "'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
 			}
+		},
+		"comp_cards": {
+			"bsonType": "array",
+			"description": "演员模卡列表",
+			"permission": {
+				"read": true,
+				"write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+			}
+		},
+		"video_card_url": {
+			"bsonType": "string",
+			"description": "视频模卡URL",
+			"permission": {
+				"read": true,
+				"write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+			}
+		},
+		"height": {
+			"bsonType": "int",
+			"description": "身高(cm)",
+			"permission": {
+				"read": true,
+				"write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+			}
+		},
+		"body_type": {
+			"bsonType": "string",
+			"description": "体型",
+			"permission": {
+				"read": true,
+				"write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+			}
+		},
+		"skills": {
+			"bsonType": "array",
+			"description": "技能列表",
+			"permission": {
+				"read": true,
+				"write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+			}
+		},
+		"description": {
+			"bsonType": "string",
+			"description": "个人简介",
+			"permission": {
+				"read": true,
+				"write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+			}
+		},
+		"credit_score_actor": {
+			"bsonType": "int",
+			"description": "演员信用分",
+			"defaultValue": 100,
+			"permission": {
+				"read": true,
+				"write": "'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+			}
+		},
+		"credit_score_crew": {
+			"bsonType": "int",
+			"description": "剧组信用分",
+			"defaultValue": 100,
+			"permission": {
+				"read": true,
+				"write": "'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+			}
+		},
+		"is_realname_auth": {
+			"bsonType": "bool",
+			"description": "是否已实名认证",
+			"defaultValue": false,
+			"permission": {
+				"read": true,
+				"write": "'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+			}
+		},
+		"verification_status": {
+			"bsonType": "string",
+			"description": "认证状态: none/pending/verified/rejected",
+			"permission": {
+				"read": true,
+				"write": "'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+			}
+		},
+		"wallet_balance": {
+			"bsonType": "int",
+			"description": "钱包余额(分)",
+			"defaultValue": 0,
+			"permission": {
+				"read": "doc._id == auth.uid || 'READ_UNI_ID_USERS' in auth.permission",
+				"write": "'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+			}
+		},
+		"wx_avatar": {
+			"bsonType": "string",
+			"description": "微信头像URL",
+			"permission": {
+				"read": true,
+				"write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+			}
 		}
 	},
 	"required": []

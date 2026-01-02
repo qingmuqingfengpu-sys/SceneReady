@@ -51,39 +51,6 @@
 			}
 		},
 		{
-			"path": "uni_modules/uni-id-pages/pages/register/register",
-			"style": {
-				"navigationBarTitleText": "注册"
-			}
-		},
-		// #ifndef MP-WEIXIN
-		{
-			"path": "uni_modules/uni-id-pages/pages/register/register-admin",
-			"style": {
-				"navigationBarTitleText": "注册管理员账号",
-				"enablePullDownRefresh": false
-			}
-		},
-		// #endif
-		{
-			"path": "uni_modules/uni-id-pages/pages/register/register-by-email",
-			"style": {
-				"navigationBarTitleText": "邮箱验证码注册"
-			}
-		},
-		{
-			"path": "uni_modules/uni-id-pages/pages/retrieve/retrieve",
-			"style": {
-				"navigationBarTitleText": "重置密码"
-			}
-		},
-		{
-			"path": "uni_modules/uni-id-pages/pages/retrieve/retrieve-by-email",
-			"style": {
-				"navigationBarTitleText": "通过邮箱重置密码"
-			}
-		},
-		{
 			"path": "uni_modules/uni-id-pages/pages/common/webview/webview",
 			"style": {
 				"navigationBarTitleText": "",
@@ -173,11 +140,18 @@
 				"navigationBarTitleText": "个人中心",
 				"enablePullDownRefresh": true
 			}
+		},{
+			"path": "pages/actor/comp_cards",
+			"style": {
+				"navigationBarTitleText": "我的模卡",
+				"enablePullDownRefresh": true
+			}
 		}
 	],
 	"easycom": {
 		"autoscan": true,
 		"custom": {
+			"^custom-tabbar$": "@/components/custom-tabbar/custom-tabbar.vue",
 			"^uni-id-pages-(.*)": "@/uni_modules/uni-id-pages/components/uni-id-pages-$1/uni-id-pages-$1.vue",
 			"^uni-forms-item$": "@/uni_modules/uni-forms/components/uni-forms-item/uni-forms-item.vue",
 			"^uni-list-item$": "@/uni_modules/uni-list/components/uni-list-item/uni-list-item.vue",

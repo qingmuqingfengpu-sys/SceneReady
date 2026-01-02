@@ -12,14 +12,6 @@
       @markertap="onMarkerTap"
       @regionchange="onRegionChange"
     >
-      <!-- 我的图标 -->
-      <cover-view class="my-profile-icon-crew" @tap="goToProfile">
-        <cover-view class="my-icon-circle">
-          <cover-view class="my-icon-head"></cover-view>
-          <cover-view class="my-icon-body"></cover-view>
-        </cover-view>
-        <cover-view class="my-text-crew">我的</cover-view>
-      </cover-view>
     </map>
 
     <!-- 底部抽屉 -->
@@ -211,6 +203,9 @@
         </view>
       </view>
     </uni-popup>
+
+    <!-- 底部 TabBar -->
+    <custom-tabbar role="crew" :current="0" @refresh="refreshData"></custom-tabbar>
   </view>
 </template>
 
@@ -309,6 +304,17 @@ export default {
   },
 
   methods: {
+    // ========== 刷新数据 ==========
+    refreshData() {
+      this.isLoggedIn = this.checkLoginStatus()
+      this.loadActors()
+      if (this.isLoggedIn) {
+        this.loadUserInfo()
+        this.loadStats()
+        this.loadRecentOrders()
+      }
+    },
+
     // ========== 地图相关 ==========
     getMyLocation() {
       uni.getLocation({

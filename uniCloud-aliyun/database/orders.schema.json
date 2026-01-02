@@ -20,8 +20,49 @@
     "receiver_id": {
       "bsonType": "string",
       "title": "接单者ID",
-      "description": "接单的用户ID(演员方)",
+      "description": "接单的用户ID(演员方) - 兼容单人模式",
       "foreignKey": "uni-id-users._id"
+    },
+    "receivers": {
+      "bsonType": "array",
+      "title": "接单者列表",
+      "description": "多人接单模式下的接单者ID列表",
+      "items": {
+        "bsonType": "string"
+      }
+    },
+    "applicants": {
+      "bsonType": "array",
+      "title": "申请者列表",
+      "description": "申请该订单的演员及其状态",
+      "items": {
+        "bsonType": "object",
+        "properties": {
+          "actor_id": {
+            "bsonType": "string",
+            "title": "演员ID",
+            "foreignKey": "uni-id-users._id"
+          },
+          "status": {
+            "bsonType": "string",
+            "title": "申请状态",
+            "description": "pending-待审核, approved-已通过, rejected-已拒绝",
+            "enum": ["pending", "approved", "rejected"]
+          },
+          "apply_time": {
+            "bsonType": "timestamp",
+            "title": "申请时间"
+          },
+          "review_time": {
+            "bsonType": "timestamp",
+            "title": "审核时间"
+          },
+          "reject_reason": {
+            "bsonType": "string",
+            "title": "拒绝原因"
+          }
+        }
+      }
     },
     "order_status": {
       "bsonType": "int",

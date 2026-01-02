@@ -3,7 +3,7 @@
     <!-- 用户信息卡片 -->
     <view class="profile-header">
       <view class="user-info">
-        <image class="user-avatar" :src="userInfo.avatar || '/static/default-crew.png'" mode="aspectFill" @tap="editAvatar"></image>
+        <image class="user-avatar" :src="displayAvatar" mode="aspectFill" @tap="editAvatar"></image>
         <view class="user-detail">
           <text class="user-name">{{ userInfo.nickname || '剧组名称' }}</text>
           <view class="user-role">
@@ -154,6 +154,9 @@
     <view class="logout-section">
       <button class="logout-btn" @tap="logout">退出登录</button>
     </view>
+
+    <!-- 底部 TabBar -->
+    <custom-tabbar role="crew" :current="2" @refresh="loadUserInfo"></custom-tabbar>
   </view>
 </template>
 
@@ -175,6 +178,11 @@ export default {
   },
 
   computed: {
+    displayAvatar() {
+      const avatarFile = this.userInfo.avatar_file
+      const avatarFileUrl = avatarFile && avatarFile.url ? avatarFile.url : null
+      return avatarFileUrl || this.userInfo.wx_avatar || this.userInfo.avatar || '/static/default-crew.png'
+    },
     crewCreditLevelClass() {
       const score = this.userInfo.credit_score_crew || 100
       if (score >= 130) return 'level-gold'
@@ -220,6 +228,8 @@ export default {
           const res = await db.collection('uni-id-users').doc(cloudUserInfo.uid).field({
             nickname: true,
             avatar: true,
+            avatar_file: true,
+            wx_avatar: true,
             credit_score_crew: true,
             verification_status: true,
             wallet_balance: true
@@ -400,7 +410,7 @@ export default {
 .profile-page {
   min-height: 100vh;
   background-color: $bg-primary;
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: 120rpx; // TabBar 空间
 }
 
 // 用户信息头部

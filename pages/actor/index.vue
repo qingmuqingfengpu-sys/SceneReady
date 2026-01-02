@@ -1,11 +1,5 @@
 <template>
   <view class="actor-home">
-    <!-- 顶部"我的"图标 -->
-    <view class="my-profile-icon" @tap="goToProfile">
-      <uni-icons type="person" size="24" color="#000"></uni-icons>
-      <text class="my-text">我的</text>
-    </view>
-
     <!-- 顶部统计卡片 -->
     <view class="stats-header">
       <view class="stat-card">
@@ -39,7 +33,7 @@
         </view>
       </scroll-view>
       <view class="filter-icon" @tap="showFilterDrawer">
-        <uni-icons type="sound" size="20" color="#FFD700"></uni-icons>
+        <uni-icons type="bars" size="20" color="#FFD700"></uni-icons>
       </view>
     </view>
 
@@ -55,7 +49,7 @@
         <view
           v-for="job in jobList"
           :key="job._id"
-          class="job-card"
+          :class="['job-card', { 'job-disabled': isJobUnavailable(job) }]"
           @tap="viewJobDetail(job)"
         >
           <!-- 左侧：剧组信息 -->
@@ -103,10 +97,25 @@
           <!-- 右侧：价格和抢单按钮 -->
           <view class="job-right">
             <view class="price-section">
-              <text class="price-amount">¥{{ (job.price_amount / 100).toFixed(0) }}</text>
+              <text class="price-amount">{{ (job.price_amount / 100).toFixed(0) }}</text>
               <text class="price-unit">/{{ job.price_type === 'daily' ? '天' : '时' }}</text>
             </view>
-            <button class="grab-btn" size="mini" @tap.stop="grabOrder(job)">抢单</button>
+            <!-- 订单状态标签 -->
+            <view v-if="job.order_status === 3" class="status-tag completed">
+              <text>已完成</text>
+            </view>
+            <view v-else-if="job.order_status === 4" class="status-tag cancelled">
+              <text>已取消</text>
+            </view>
+            <view v-else-if="job.order_status === 1 || job.order_status === 2" class="status-tag in-progress">
+              <text>进行中</text>
+            </view>
+            <!-- 已满员/已被抢状态 -->
+            <view v-else-if="isJobUnavailable(job)" class="unavailable-tag">
+              <text>已被抢</text>
+            </view>
+            <!-- 可申请状态 -->
+            <button v-else class="grab-btn" size="mini" @tap.stop="applyOrder(job)">申请</button>
             <text v-if="job.order_type === 'immediate'" class="order-type-tag immediate">即时单</text>
             <text v-else class="order-type-tag reservation">预约单</text>
           </view>
@@ -189,6 +198,9 @@
         </view>
       </view>
     </uni-popup>
+
+    <!-- 底部 TabBar -->
+    <custom-tabbar role="actor" :current="0" @refresh="onRefresh"></custom-tabbar>
   </view>
 </template>
 
@@ -210,6 +222,7 @@ export default {
       selectedFilter: 'all',
       filterOptions: [
         { label: '全部', value: 'all' },
+        { label: '可抢', value: 'available' },
         { label: '附近', value: 'nearby' },
         { label: '高价', value: 'high_price' },
         { label: '今天', value: 'today' },
@@ -388,7 +401,10 @@ export default {
         }
 
         // 根据筛选条件添加参数
-        if (this.selectedFilter === 'nearby' && this.userLocation.longitude) {
+        if (this.selectedFilter === 'all') {
+          // "全部"标签显示所有发布过的订单
+          params.showAll = true
+        } else if (this.selectedFilter === 'nearby' && this.userLocation.longitude) {
           params.maxDistance = 3000 // 3km
         } else if (this.selectedFilter === 'high_price') {
           params.minPrice = 150 // 150元以上
@@ -420,9 +436,14 @@ export default {
 
         if (res.code === 0 && res.data) {
           // 转换数据格式以适配前端显示
-          const jobs = res.data.list.map(job => ({
+          let jobs = res.data.list.map(job => {
+            // 处理剧组头像：avatar_file.url > avatar > 默认头像
+            const publisherInfo = job.publisher_info || {}
+            const avatarFile = publisherInfo.avatar_file
+            const crewAvatar = (avatarFile && avatarFile.url) || publisherInfo.avatar || '/static/default-crew.png'
+            return {
             _id: job._id,
-            crew_avatar: job.publisher_info?.avatar || '/static/default-crew.png',
+            crew_avatar: crewAvatar,
             crew_credit: job.publisher_info?.credit_score || 100,
             role_description: job.role_description || '群众演员',
             distance: job.distance_km ? parseFloat(job.distance_km) : null,
@@ -432,8 +453,20 @@ export default {
             welfare_tags: job.welfare_tags || [],
             price_amount: job.price_amount,
             price_type: job.price_type,
-            order_type: job.order_type
-          }))
+            order_type: job.order_type,
+            // 添加用于判断订单是否可用的字段
+            order_status: job.order_status,
+            receivers: job.receivers || []
+          }})
+
+          // 如果选择"可抢"筛选，过滤掉已满员的订单
+          if (this.selectedFilter === 'available') {
+            jobs = jobs.filter(job => {
+              const receivers = job.receivers || []
+              const peopleNeeded = job.people_needed || 1
+              return receivers.length < peopleNeeded
+            })
+          }
 
           if (reset) {
             this.jobList = jobs
@@ -690,6 +723,83 @@ export default {
       } else {
         return `${date.getMonth() + 1}月${date.getDate()}日 ${timeStr}`
       }
+    },
+
+    // 判断订单是否不可用（已满员）
+    isJobUnavailable(job) {
+      // 检查订单状态或接单者数量
+      if (job.order_status !== 0) return true
+      const receivers = job.receivers || []
+      const peopleNeeded = job.people_needed || 1
+      return receivers.length >= peopleNeeded
+    },
+
+    // 申请订单（多人审核模式）
+    async applyOrder(job) {
+      if (!this.requireLogin('申请订单')) return
+
+      // 检查是否已满员
+      if (this.isJobUnavailable(job)) {
+        uni.showToast({
+          title: '该订单已满员',
+          icon: 'none'
+        })
+        return
+      }
+
+      // 显示确认弹窗
+      uni.showModal({
+        title: '确认申请',
+        content: `确定要申请【${job.role_description || '群众演员'}】吗？\n报酬：${(job.price_amount / 100).toFixed(0)}元/${job.price_type === 'daily' ? '天' : '时'}\n\n提交后请等待剧组审核`,
+        confirmText: '确认申请',
+        success: async (modalRes) => {
+          if (modalRes.confirm) {
+            await this.doApplyOrder(job._id)
+          }
+        }
+      })
+    },
+
+    // 执行申请
+    async doApplyOrder(orderId) {
+      uni.showLoading({ title: '申请中...', mask: true })
+
+      try {
+        const orderCo = uniCloud.importObject('order-co')
+        const res = await orderCo.apply(orderId)
+
+        uni.hideLoading()
+
+        if (res.code === 0) {
+          uni.showToast({
+            title: '申请已提交，请等待审核',
+            icon: 'success',
+            duration: 2000
+          })
+          // 刷新统计
+          this.loadStats()
+        } else {
+          let errorMsg = res.message || '申请失败'
+          if (res.code === 401) {
+            errorMsg = '请先登录'
+            setTimeout(() => {
+              uni.reLaunch({ url: '/pages/index/index' })
+            }, 1500)
+          }
+          uni.showToast({
+            title: errorMsg,
+            icon: 'none',
+            duration: 2500
+          })
+        }
+      } catch (error) {
+        uni.hideLoading()
+        console.error('申请订单失败:', error)
+        uni.showToast({
+          title: '网络错误，请重试',
+          icon: 'none'
+        })
+      }
     }
   }
 }
@@ -702,34 +812,8 @@ export default {
   width: 100%;
   min-height: 100vh;
   background-color: $bg-primary;
-  padding-bottom: 20rpx;
+  padding-bottom: 120rpx; // 预留 TabBar 空间
   position: relative;
-}
-
-// ========== 我的图标 ==========
-.my-profile-icon {
-  position: absolute;
-  top: 32rpx;
-  left: 32rpx;
-  z-index: 100;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4rpx;
-  padding: 12rpx 16rpx;
-  background-color: rgba(255, 255, 255, 0.9);
-  border-radius: 16rpx;
-  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.1);
-
-  &:active {
-    opacity: 0.8;
-  }
-
-  .my-text {
-    font-size: 20rpx;
-    color: $black;
-    font-weight: $font-weight-medium;
-  }
 }
 
 // ========== 统计头部 ==========
@@ -737,7 +821,7 @@ export default {
   display: flex;
   background: linear-gradient(135deg, $primary-color 0%, #FFED4E 100%);
   padding: $spacing-lg $spacing-base;
-  padding-top: 96rpx;
+  padding-top: 48rpx;
   margin-bottom: $spacing-base;
 }
 
@@ -829,6 +913,61 @@ export default {
 
   &:active {
     opacity: 0.8;
+  }
+
+  // 已被抢/不可用状态
+  &.job-disabled {
+    opacity: 0.6;
+    background-color: rgba($bg-secondary, 0.5);
+
+    .price-amount {
+      color: $text-secondary !important;
+    }
+  }
+}
+
+// 已被抢标签
+.unavailable-tag {
+  padding: 12rpx 24rpx;
+  background-color: $gray-4;
+  border-radius: $border-radius-base;
+
+  text {
+    font-size: $font-size-sm;
+    color: $text-secondary;
+    font-weight: $font-weight-bold;
+  }
+}
+
+// 订单状态标签
+.status-tag {
+  padding: 12rpx 24rpx;
+  border-radius: $border-radius-base;
+
+  text {
+    font-size: $font-size-sm;
+    font-weight: $font-weight-bold;
+  }
+
+  &.completed {
+    background-color: rgba(76, 175, 80, 0.15);
+    text {
+      color: #4CAF50;
+    }
+  }
+
+  &.cancelled {
+    background-color: rgba(158, 158, 158, 0.15);
+    text {
+      color: #9E9E9E;
+    }
+  }
+
+  &.in-progress {
+    background-color: rgba(33, 150, 243, 0.15);
+    text {
+      color: #2196F3;
+    }
   }
 }
 

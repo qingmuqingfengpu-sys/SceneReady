@@ -132,6 +132,9 @@
         </view>
       </view>
     </uni-popup>
+
+    <!-- 底部 TabBar -->
+    <custom-tabbar role="actor" :current="1" @refresh="refreshOrders"></custom-tabbar>
   </view>
 </template>
 
@@ -451,7 +454,7 @@ export default {
     },
 
     goToFindJobs() {
-      uni.switchTab({
+      uni.reLaunch({
         url: '/pages/actor/index'
       })
     }
@@ -467,6 +470,7 @@ export default {
   background-color: $bg-primary;
   display: flex;
   flex-direction: column;
+  padding-bottom: 120rpx; // TabBar 空间
 }
 
 // 状态筛选

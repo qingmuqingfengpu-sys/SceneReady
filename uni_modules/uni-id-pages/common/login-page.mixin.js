@@ -62,6 +62,7 @@ const mixin = {
 					return false
 				}
 			}
+			return false
 		},
 		agree: {
 			get() {
@@ -72,6 +73,8 @@ const mixin = {
 						return true
 					}
 				}
+				// 未挂载时返回 true，避免弹窗
+				return true
 			},
 			set(agree) {
 				if (this.$refs.agreements) {

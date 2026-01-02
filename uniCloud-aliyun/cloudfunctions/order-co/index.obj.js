@@ -478,8 +478,14 @@ module.exports = {
 
       const order = orderRes.data[0]
 
-      // 权限检查:只有发布者和接单者可以查看详情
-      if (order.publisher_id !== userId && order.receiver_id !== userId) {
+      // 检查用户在申请者列表中的状态
+      const applicants = order.applicants || []
+      const myApplication = applicants.find(a => a.actor_id === userId)
+      const receivers = order.receivers || []
+      const isReceiver = receivers.includes(userId)
+
+      // 权限检查:发布者、接单者或申请者可以查看详情
+      if (order.publisher_id !== userId && !isReceiver && !myApplication) {
         return {
           code: 403,
           message: '无权查看此订单'
@@ -492,6 +498,17 @@ module.exports = {
       // 添加取消者类型标识
       if (order.order_status === 4 && order.cancel_by) {
         order.is_cancelled_by_crew = order.cancel_by === order.publisher_id
+      }
+
+      // 添加当前用户的申请状态(用于演员端显示)
+      if (myApplication) {
+        order.my_application_status = myApplication.status
+        order.my_reject_reason = myApplication.reject_reason || ''
+        order.my_apply_time = myApplication.apply_time
+        order.my_review_time = myApplication.review_time
+      } else if (isReceiver) {
+        // 如果已经是接单者,状态为 approved
+        order.my_application_status = 'approved'
       }
 
       return {
@@ -573,7 +590,454 @@ module.exports = {
   },
 
   /**
-   * 抢单 - 演员接单
+   * 申请订单 - 演员申请接单(多人审核模式)
+   * @param {String} orderId 订单ID
+   * @returns {Object} 操作结果
+   */
+  async apply(orderId) {
+    try {
+      const userId = this.authInfo && this.authInfo.uid
+
+      if (!userId) {
+        return {
+          code: 401,
+          message: '请先登录'
+        }
+      }
+
+      // 1. 检查用户角色(必须是演员)
+      const userRes = await db.collection('uni-id-users')
+        .doc(userId)
+        .field({ user_role: true, auth_status: true, credit_score_actor: true })
+        .get()
+
+      if (!userRes.data || userRes.data.length === 0) {
+        return {
+          code: 404,
+          message: '用户不存在'
+        }
+      }
+
+      const user = userRes.data[0]
+
+      if (user.user_role !== 2) {
+        return {
+          code: 403,
+          message: '仅演员可以申请'
+        }
+      }
+
+      // 2. 查询订单
+      const orderRes = await db.collection('orders')
+        .doc(orderId)
+        .get()
+
+      const order = Array.isArray(orderRes.data) ? orderRes.data[0] : orderRes.data
+      if (!order) {
+        return {
+          code: 404,
+          message: '订单不存在'
+        }
+      }
+
+      // 3. 检查订单状态(必须是待接单)
+      if (order.order_status !== 0) {
+        return {
+          code: 400,
+          message: '该订单已停止接受申请'
+        }
+      }
+
+      // 4. 检查是否是自己发布的订单
+      if (order.publisher_id === userId) {
+        return {
+          code: 400,
+          message: '不能申请自己发布的订单'
+        }
+      }
+
+      // 5. 检查是否已经申请过
+      const applicants = order.applicants || []
+      const existingApplicant = applicants.find(a => a.actor_id === userId)
+      if (existingApplicant) {
+        if (existingApplicant.status === 'pending') {
+          return { code: 400, message: '您已申请过该订单，请等待审核' }
+        } else if (existingApplicant.status === 'approved') {
+          return { code: 400, message: '您的申请已通过' }
+        } else if (existingApplicant.status === 'rejected') {
+          return { code: 400, message: '您的申请已被拒绝' }
+        }
+      }
+
+      // 6. 检查是否已满员
+      const approvedCount = applicants.filter(a => a.status === 'approved').length
+      const peopleNeeded = order.people_needed || 1
+      if (approvedCount >= peopleNeeded) {
+        return {
+          code: 400,
+          message: '该订单已满员'
+        }
+      }
+
+      // 7. 检查演员是否符合要求
+      const matchResult = await checkActorMatch(userId, order)
+      if (!matchResult.match) {
+        return {
+          code: 400,
+          message: matchResult.reason || '您不符合该订单的要求'
+        }
+      }
+
+      // 8. 添加申请记录
+      const newApplicant = {
+        actor_id: userId,
+        status: 'pending',
+        apply_time: Date.now()
+      }
+
+      await db.collection('orders')
+        .doc(orderId)
+        .update({
+          applicants: dbCmd.push(newApplicant),
+          update_time: Date.now()
+        })
+
+      return {
+        code: 0,
+        message: '申请已提交，请等待剧组审核',
+        data: {
+          order_id: orderId,
+          status: 'pending'
+        }
+      }
+
+    } catch (error) {
+      console.error('申请订单失败:', error)
+      return {
+        code: 500,
+        message: error.message || '系统错误,请稍后重试'
+      }
+    }
+  },
+
+  /**
+   * 审核申请者 - 剧组端
+   * @param {String} orderId 订单ID
+   * @param {String} actorId 演员ID
+   * @param {String} action 操作: approve-通过, reject-拒绝
+   * @param {String} reason 拒绝原因(可选)
+   * @returns {Object} 操作结果
+   */
+  async reviewApplicant(orderId, actorId, action, reason = '') {
+    try {
+      const userId = this.authInfo && this.authInfo.uid
+
+      if (!userId) {
+        return { code: 401, message: '请先登录' }
+      }
+
+      if (!['approve', 'reject'].includes(action)) {
+        return { code: 400, message: '无效的操作' }
+      }
+
+      // 1. 查询订单
+      const orderRes = await db.collection('orders')
+        .doc(orderId)
+        .get()
+
+      const order = Array.isArray(orderRes.data) ? orderRes.data[0] : orderRes.data
+      if (!order) {
+        return { code: 404, message: '订单不存在' }
+      }
+
+      // 2. 检查权限(必须是发布者)
+      if (order.publisher_id !== userId) {
+        return { code: 403, message: '无权审核此订单' }
+      }
+
+      // 3. 检查订单状态
+      if (order.order_status !== 0) {
+        return { code: 400, message: '订单状态不允许审核' }
+      }
+
+      // 4. 查找申请者
+      const applicants = order.applicants || []
+      const applicantIndex = applicants.findIndex(a => a.actor_id === actorId)
+      if (applicantIndex === -1) {
+        return { code: 404, message: '申请者不存在' }
+      }
+
+      const applicant = applicants[applicantIndex]
+      if (applicant.status !== 'pending') {
+        return { code: 400, message: '该申请已被处理' }
+      }
+
+      // 5. 如果是通过，检查是否已满员
+      const approvedCount = applicants.filter(a => a.status === 'approved').length
+      const peopleNeeded = order.people_needed || 1
+      if (action === 'approve' && approvedCount >= peopleNeeded) {
+        return { code: 400, message: '该订单已满员，无法再通过申请' }
+      }
+
+      // 6. 更新申请状态
+      const now = Date.now()
+      applicants[applicantIndex].status = action === 'approve' ? 'approved' : 'rejected'
+      applicants[applicantIndex].review_time = now
+      if (action === 'reject' && reason) {
+        applicants[applicantIndex].reject_reason = reason
+      }
+
+      // 7. 构建更新数据
+      const updateData = {
+        applicants: applicants,
+        update_time: now
+      }
+
+      // 8. 如果通过，添加到接单者列表
+      if (action === 'approve') {
+        const receivers = order.receivers || []
+        receivers.push(actorId)
+        updateData.receivers = receivers
+
+        // 保持 receiver_id 兼容（存储第一个接单者）
+        if (receivers.length === 1) {
+          updateData.receiver_id = actorId
+        }
+
+        // 检查是否满员
+        const newApprovedCount = approvedCount + 1
+        if (newApprovedCount >= peopleNeeded) {
+          updateData.order_status = 1 // 进行中
+          updateData.grab_time = now
+        }
+      }
+
+      await db.collection('orders')
+        .doc(orderId)
+        .update(updateData)
+
+      return {
+        code: 0,
+        message: action === 'approve' ? '已通过该演员的申请' : '已拒绝该演员的申请',
+        data: {
+          order_id: orderId,
+          actor_id: actorId,
+          action: action,
+          is_full: action === 'approve' && (approvedCount + 1) >= peopleNeeded
+        }
+      }
+
+    } catch (error) {
+      console.error('审核申请失败:', error)
+      return {
+        code: 500,
+        message: error.message || '系统错误'
+      }
+    }
+  },
+
+  /**
+   * 获取订单申请者列表 - 剧组端
+   * @param {String} orderId 订单ID
+   * @returns {Object} 申请者列表(含演员详细信息)
+   */
+  async getApplicants(orderId) {
+    try {
+      const userId = this.authInfo && this.authInfo.uid
+
+      if (!userId) {
+        return { code: 401, message: '请先登录' }
+      }
+
+      // 1. 查询订单
+      const orderRes = await db.collection('orders')
+        .doc(orderId)
+        .get()
+
+      const order = Array.isArray(orderRes.data) ? orderRes.data[0] : orderRes.data
+      if (!order) {
+        return { code: 404, message: '订单不存在' }
+      }
+
+      // 2. 检查权限
+      if (order.publisher_id !== userId) {
+        return { code: 403, message: '无权查看此订单申请' }
+      }
+
+      // 3. 获取申请者列表
+      const applicants = order.applicants || []
+      if (applicants.length === 0) {
+        return {
+          code: 0,
+          data: {
+            list: [],
+            total: 0,
+            approved_count: 0,
+            people_needed: order.people_needed || 1
+          }
+        }
+      }
+
+      // 4. 获取演员详细信息
+      const actorIds = applicants.map(a => a.actor_id)
+      const actorsRes = await db.collection('uni-id-users')
+        .where({
+          _id: dbCmd.in(actorIds)
+        })
+        .field({
+          _id: true,
+          nickname: true,
+          avatar: true,
+          avatar_file: true,
+          gender: true,
+          height: true,
+          body_type: true,
+          skills: true,
+          description: true,
+          comp_cards: true,
+          video_card_url: true,
+          credit_score_actor: true,
+          is_realname_auth: true
+        })
+        .get()
+
+      const actorMap = {}
+      ;(actorsRes.data || []).forEach(actor => {
+        actorMap[actor._id] = actor
+      })
+
+      // 5. 组装返回数据
+      const list = applicants.map(applicant => {
+        const actor = actorMap[applicant.actor_id] || {}
+        return {
+          ...applicant,
+          actor_info: {
+            _id: actor._id,
+            nickname: actor.nickname || '未知演员',
+            avatar: actor.avatar || '',
+            avatar_file: actor.avatar_file || null,
+            gender: actor.gender,
+            gender_text: actor.gender === 1 ? '男' : (actor.gender === 2 ? '女' : '未设置'),
+            height: actor.height,
+            body_type: actor.body_type,
+            skills: actor.skills || [],
+            description: actor.description || '',
+            comp_cards: actor.comp_cards || [],
+            video_card_url: actor.video_card_url || '',
+            credit_score: actor.credit_score_actor || 100,
+            is_realname_auth: actor.is_realname_auth || false
+          }
+        }
+      })
+
+      // 按申请时间倒序，pending状态优先
+      list.sort((a, b) => {
+        if (a.status === 'pending' && b.status !== 'pending') return -1
+        if (a.status !== 'pending' && b.status === 'pending') return 1
+        return (b.apply_time || 0) - (a.apply_time || 0)
+      })
+
+      const approvedCount = applicants.filter(a => a.status === 'approved').length
+
+      return {
+        code: 0,
+        data: {
+          list,
+          total: applicants.length,
+          approved_count: approvedCount,
+          people_needed: order.people_needed || 1
+        }
+      }
+
+    } catch (error) {
+      console.error('获取申请者列表失败:', error)
+      return {
+        code: 500,
+        message: error.message || '系统错误'
+      }
+    }
+  },
+
+  /**
+   * 获取演员的申请记录 - 演员端
+   * @param {Object} params 查询参数
+   * @returns {Object} 申请记录列表
+   */
+  async getMyApplications(params = {}) {
+    try {
+      const userId = this.authInfo && this.authInfo.uid
+
+      if (!userId) {
+        return { code: 401, message: '请先登录' }
+      }
+
+      const { status, page = 1, pageSize = 20 } = params
+
+      // 构建查询条件
+      let whereCondition = {
+        'applicants.actor_id': userId
+      }
+
+      // 状态筛选
+      if (status) {
+        whereCondition['applicants.status'] = status
+      }
+
+      const orderRes = await db.collection('orders')
+        .where(whereCondition)
+        .orderBy('create_time', 'desc')
+        .skip((page - 1) * pageSize)
+        .limit(pageSize)
+        .get()
+
+      const orders = orderRes.data || []
+
+      // 处理返回数据
+      const list = orders.map(order => {
+        const myApplicant = (order.applicants || []).find(a => a.actor_id === userId)
+        return {
+          _id: order._id,
+          role_description: order.role_description || '群众演员',
+          meeting_location_name: order.meeting_location_name,
+          meeting_time: order.meeting_time,
+          price_amount: order.price_amount,
+          price_type: order.price_type,
+          price_amount_yuan: (order.price_amount / 100).toFixed(2),
+          order_status: order.order_status,
+          people_needed: order.people_needed || 1,
+          application_status: myApplicant ? myApplicant.status : 'unknown',
+          apply_time: myApplicant ? myApplicant.apply_time : null,
+          review_time: myApplicant ? myApplicant.review_time : null,
+          reject_reason: myApplicant ? myApplicant.reject_reason : null
+        }
+      })
+
+      // 获取总数
+      const countRes = await db.collection('orders')
+        .where(whereCondition)
+        .count()
+
+      return {
+        code: 0,
+        data: {
+          list,
+          total: countRes.total,
+          page,
+          pageSize
+        }
+      }
+
+    } catch (error) {
+      console.error('获取申请记录失败:', error)
+      return {
+        code: 500,
+        message: error.message || '系统错误'
+      }
+    }
+  },
+
+  /**
+   * 抢单 - 演员接单 (保留兼容旧版直接抢单模式)
    * @param {String} orderId 订单ID
    * @returns {Object} 操作结果
    */
@@ -610,20 +1074,11 @@ module.exports = {
         }
       }
 
-      // 检查认证状态 - 暂时跳过演员认证检查
-      // if (user.auth_status !== 2) {
-      //   return {
-      //     code: 403,
-      //     message: '请先完成身份认证'
-      //   }
-      // }
-
       // 2. 查询订单
       const orderRes = await db.collection('orders')
         .doc(orderId)
         .get()
 
-      // 兼容处理：data可能是数组或单个对象
       const order = Array.isArray(orderRes.data) ? orderRes.data[0] : orderRes.data
       if (!order) {
         return {
@@ -632,7 +1087,7 @@ module.exports = {
         }
       }
 
-      // 3. 检查订单状态(必须是待接单或招募中)
+      // 3. 检查订单状态(必须是待接单)
       if (order.order_status !== 0) {
         return {
           code: 400,
@@ -678,12 +1133,10 @@ module.exports = {
       // 8. 更新订单状态(使用事务保证原子性)
       const transaction = await db.startTransaction()
       try {
-        // 再次检查订单状态(防止并发抢单)
         const checkRes = await transaction.collection('orders')
           .doc(orderId)
           .get()
 
-        // 兼容处理：data可能是数组或单个对象
         const checkOrder = Array.isArray(checkRes.data) ? checkRes.data[0] : checkRes.data
         if (!checkOrder || checkOrder.order_status !== 0) {
           await transaction.rollback()
@@ -693,7 +1146,6 @@ module.exports = {
           }
         }
 
-        // 再次检查是否已满员
         const currentReceivers = checkOrder.receivers || []
         const neededCount = checkOrder.people_needed || 1
         if (currentReceivers.length >= neededCount) {
@@ -704,7 +1156,6 @@ module.exports = {
           }
         }
 
-        // 再次检查是否已抢过
         if (currentReceivers.includes(userId)) {
           await transaction.rollback()
           return {
@@ -713,23 +1164,19 @@ module.exports = {
           }
         }
 
-        // 添加到接单者列表
         const newReceivers = [...currentReceivers, userId]
         const isFull = newReceivers.length >= neededCount
 
-        // 更新订单
         const updateData = {
           receivers: newReceivers,
           update_time: Date.now()
         }
 
-        // 如果满员，更新状态为进行中
         if (isFull) {
-          updateData.order_status = 1 // 进行中
+          updateData.order_status = 1
           updateData.grab_time = Date.now()
         }
 
-        // 保持 receiver_id 兼容（存储第一个接单者）
         if (newReceivers.length === 1) {
           updateData.receiver_id = userId
         }
@@ -1038,14 +1485,17 @@ module.exports = {
         welfare = [],
         orderType, // immediate/reservation
         dateFilter, // today/tomorrow
+        showAll = false, // 是否显示所有订单(包括已完成/已取消)
         page = 1,
         pageSize = 20
       } = params
 
       // 构建查询条件
-      let whereCondition = {
-        order_status: 0, // 待接单
-        receiver_id: null // 未被接单
+      let whereCondition = {}
+
+      // 如果不是显示全部,只查询待接单状态的订单
+      if (!showAll) {
+        whereCondition.order_status = 0 // 待接单
       }
 
       // 价格筛选
@@ -1155,6 +1605,7 @@ module.exports = {
             _id: true,
             nickname: true,
             avatar: true,
+            avatar_file: true,
             credit_score_crew: true
           })
           .get()
@@ -1174,6 +1625,7 @@ module.exports = {
           publisher_info: {
             nickname: publisher.nickname || '未知剧组',
             avatar: publisher.avatar || '',
+            avatar_file: publisher.avatar_file || null,
             credit_score: publisher.credit_score_crew || 100
           }
         }
@@ -2321,6 +2773,80 @@ module.exports = {
   },
 
   /**
+   * 取消申请 - 演员端
+   * @param {String} orderId 订单ID
+   * @returns {Object} 操作结果
+   */
+  async cancelApplication(orderId) {
+    try {
+      const userId = this.authInfo && this.authInfo.uid
+
+      if (!userId) {
+        return { code: 401, message: '请先登录' }
+      }
+
+      // 查询订单
+      const orderRes = await db.collection('orders')
+        .doc(orderId)
+        .get()
+
+      const order = Array.isArray(orderRes.data) ? orderRes.data[0] : orderRes.data
+      if (!order) {
+        return { code: 404, message: '订单不存在' }
+      }
+
+      // 检查订单状态(只有待接单状态的申请可以取消)
+      if (order.order_status !== 0) {
+        return { code: 400, message: '订单已开始,无法取消申请' }
+      }
+
+      // 查找用户的申请
+      const applicants = order.applicants || []
+      const myApplicationIndex = applicants.findIndex(a => a.actor_id === userId)
+
+      if (myApplicationIndex === -1) {
+        return { code: 404, message: '未找到您的申请记录' }
+      }
+
+      const myApplication = applicants[myApplicationIndex]
+
+      // 只有 pending 状态可以取消
+      if (myApplication.status !== 'pending') {
+        if (myApplication.status === 'approved') {
+          return { code: 400, message: '申请已通过,无法取消' }
+        } else {
+          return { code: 400, message: '申请已被处理,无法取消' }
+        }
+      }
+
+      // 从申请者列表中移除
+      applicants.splice(myApplicationIndex, 1)
+
+      await db.collection('orders')
+        .doc(orderId)
+        .update({
+          applicants: applicants,
+          update_time: Date.now()
+        })
+
+      return {
+        code: 0,
+        message: '已取消申请',
+        data: {
+          order_id: orderId
+        }
+      }
+
+    } catch (error) {
+      console.error('取消申请失败:', error)
+      return {
+        code: 500,
+        message: error.message || '系统错误'
+      }
+    }
+  },
+
+  /**
    * 获取演员的订单列表 - 演员端
    * @param {Object} params 查询参数
    * @returns {Object} 订单列表
@@ -2372,6 +2898,7 @@ module.exports = {
             _id: true,
             nickname: true,
             avatar: true,
+            avatar_file: true,
             credit_score_crew: true
           })
           .get()
@@ -2389,6 +2916,7 @@ module.exports = {
           publisher_info: {
             nickname: publisher.nickname || '未知剧组',
             avatar: publisher.avatar || '',
+            avatar_file: publisher.avatar_file || null,
             credit_score: publisher.credit_score_crew || 100
           }
         }

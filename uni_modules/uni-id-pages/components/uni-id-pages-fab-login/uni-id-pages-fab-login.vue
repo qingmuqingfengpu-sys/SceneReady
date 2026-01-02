@@ -44,15 +44,10 @@
 		},
 		data() {
 			return {
-				servicesList: [{
-						"id": "username",
-						"text": "账号登录",
-						"logo": "/uni_modules/uni-id-pages/static/login/uni-fab-login/user.png",
-						"path": "/uni_modules/uni-id-pages/pages/login/login-withpwd"
-					},
+				servicesList: [
 					{
 						"id": "smsCode",
-						"text": "短信验证码",
+						"text": "手机验证码",
 						"logo": "/uni_modules/uni-id-pages/static/login/uni-fab-login/sms.png",
 						"path": "/uni_modules/uni-id-pages/pages/login/login-withoutpwd?type=smsCode"
 					},
@@ -60,54 +55,7 @@
 						"id": "weixin",
 						"text": "微信登录",
 						"logo": "/uni_modules/uni-id-pages/static/login/uni-fab-login/weixin.png",
-					},
-					// #ifndef MP-WEIXIN
-					{
-						"id": "apple",
-						"text": "苹果登录",
-						"logo": "/uni_modules/uni-id-pages/static/app-plus/uni-fab-login/apple.png",
-					},
-					{
-						"id": "univerify",
-						"text": "一键登录",
-						"logo": "/uni_modules/uni-id-pages/static/app-plus/uni-fab-login/univerify.png",
-					},
-					{
-						"id": "taobao",
-						"text": "淘宝登录",
-						"logo": "/uni_modules/uni-id-pages/static/app-plus/uni-fab-login/taobao.png",
-					},
-					{
-						"id": "facebook",
-						"text": "脸书登录",
-						"logo": "/uni_modules/uni-id-pages/static/app-plus/uni-fab-login/facebook.png",
-					},
-					{
-						"id": "alipay",
-						"text": "支付宝登录",
-						"logo": "/uni_modules/uni-id-pages/static/app-plus/uni-fab-login/alipay.png",
-					},
-					{
-						"id": "qq",
-						"text": "QQ登录",
-						"logo": "/uni_modules/uni-id-pages/static/app-plus/uni-fab-login/qq.png",
-					},
-					{
-						"id": "google",
-						"text": "谷歌登录",
-						"logo": "/uni_modules/uni-id-pages/static/app-plus/uni-fab-login/google.png",
-					},
-					{
-						"id": "douyin",
-						"text": "抖音登录",
-						"logo": "/uni_modules/uni-id-pages/static/app-plus/uni-fab-login/douyin.png",
-					},
-					{
-						"id": "sinaweibo",
-						"text": "新浪微博",
-						"logo": "/uni_modules/uni-id-pages/static/app-plus/uni-fab-login/sinaweibo.png",
 					}
-					// #endif
 				],
 				univerifyStyle: {
 					"fullScreen": true,
@@ -171,7 +119,17 @@
 
 			this.servicesList = servicesList.filter(item => {
 				let path = item.path ? item.path.split('?')[0] : '';
-				return path != this.getRoute(1)
+				let currentRoute = this.getRoute(1);
+
+				// 特殊处理：对于 login-withoutpwd 页面，不过滤带有 type 参数的项
+				// 因为这些项只是改变当前页面的显示模式，而不是跳转到新页面
+				if (currentRoute === '/uni_modules/uni-id-pages/pages/login/login-withoutpwd' &&
+					path === currentRoute &&
+					item.path && item.path.includes('type=')) {
+					return true;
+				}
+
+				return path != currentRoute;
 			})
 		},
 		methods: {

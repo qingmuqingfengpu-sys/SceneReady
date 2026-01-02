@@ -124,7 +124,7 @@
 
 				this.$refs.uniFabLogin.login_before(this.type, true, options)
 			},
-			toSmsPage() {
+			toSmsPage(agreed = false) {
 				if (!this.isPhone) {
 					this.focusPhone = true
 					return uni.showToast({
@@ -133,10 +133,11 @@
 						duration: 3000
 					});
 				}
-				if (this.needAgreements && !this.agree) {
-					return this.$refs.agreements.popup(this.toSmsPage)
+				// 如果已经同意了就直接跳转，不再检查
+				if (!agreed && this.needAgreements && !this.agree) {
+					return this.$refs.agreements.popup(() => this.toSmsPage(true))
 				}
-				// 发送验证吗
+				// 发送验证码
 				uni.navigateTo({
 					url: '/uni_modules/uni-id-pages/pages/login/login-smscode?phoneNumber=' + this.phone
 				});

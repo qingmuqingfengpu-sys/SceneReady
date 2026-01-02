@@ -4,7 +4,7 @@
     <view class="profile-header">
       <view class="user-info">
         <view class="avatar-section" @tap="editAvatar">
-          <image class="user-avatar" :src="userInfo.avatar || '/static/default-avatar.png'" mode="aspectFill"></image>
+          <image class="user-avatar" :src="displayAvatar" mode="aspectFill"></image>
           <view class="avatar-edit">
             <uni-icons type="camera" size="16" color="#fff"></uni-icons>
           </view>
@@ -23,7 +23,7 @@
       </view>
 
       <!-- 视频模卡预览 -->
-      <view class="video-card-section" @tap="manageVideoCard">
+      <view class="video-card-section" @tap="goToCompCards">
         <view v-if="userInfo.video_card_url" class="video-preview">
           <video
             :src="userInfo.video_card_url"
@@ -42,7 +42,7 @@
         </view>
         <view v-else class="video-upload">
           <uni-icons type="plusempty" size="40" color="#FFD700"></uni-icons>
-          <text>上传视频模卡</text>
+          <text>上传图片/视频模卡</text>
           <text class="upload-hint">提升接单成功率</text>
         </view>
       </view>
@@ -106,15 +106,21 @@
           <uni-icons type="forward" size="16" color="#666"></uni-icons>
         </view>
 
-        <view class="menu-item" @tap="goToSkills">
+        <view class="menu-item" @tap="goToDescription">
           <view class="menu-icon">
-            <uni-icons type="star" size="24" color="#FFD700"></uni-icons>
+            <uni-icons type="compose" size="24" color="#FFD700"></uni-icons>
           </view>
-          <text class="menu-text">我的特长</text>
-          <view class="menu-tags">
-            <text v-for="skill in (userInfo.skills || []).slice(0, 2)" :key="skill" class="mini-tag">{{ getSkillLabel(skill) }}</text>
-            <text v-if="(userInfo.skills || []).length > 2" class="more-tag">+{{ userInfo.skills.length - 2 }}</text>
+          <text class="menu-text">个人简介</text>
+          <text class="menu-hint">{{ userInfo.description ? '已填写' : '未填写' }}</text>
+          <uni-icons type="forward" size="16" color="#666"></uni-icons>
+        </view>
+
+        <view class="menu-item" @tap="goToCompCards">
+          <view class="menu-icon">
+            <uni-icons type="image" size="24" color="#FFD700"></uni-icons>
           </view>
+          <text class="menu-text">我的模卡</text>
+          <text class="menu-hint">{{ (userInfo.comp_cards || []).length }}张</text>
           <uni-icons type="forward" size="16" color="#666"></uni-icons>
         </view>
       </view>
@@ -188,6 +194,9 @@
     <view class="logout-section">
       <button class="logout-btn" @tap="logout">退出登录</button>
     </view>
+
+    <!-- 底部 TabBar -->
+    <custom-tabbar role="actor" :current="2" @refresh="loadUserInfo"></custom-tabbar>
   </view>
 </template>
 
@@ -218,6 +227,12 @@ export default {
   },
 
   computed: {
+    // 头像显示优先级：用户上传头像 > 微信头像 > 默认头像
+    displayAvatar() {
+      const avatarFile = this.userInfo.avatar_file
+      const avatarFileUrl = avatarFile && avatarFile.url ? avatarFile.url : null
+      return avatarFileUrl || this.userInfo.wx_avatar || this.userInfo.avatar || '/static/default-avatar.png'
+    },
     actorCreditLevelClass() {
       const score = this.userInfo.credit_score_actor || 100
       if (score >= 130) return 'level-gold'
@@ -262,12 +277,17 @@ export default {
           const res = await db.collection('uni-id-users').doc(cloudUserInfo.uid).field({
             nickname: true,
             avatar: true,
+            avatar_file: true,
+            wx_avatar: true,
             gender: true,
             height: true,
             body_type: true,
             skills: true,
+            description: true,
+            comp_cards: true,
             video_card_url: true,
             credit_score_actor: true,
+            is_realname_auth: true,
             verification_status: true,
             wallet_balance: true
           }).get()
@@ -386,16 +406,126 @@ export default {
       })
     },
 
-    goToSkills() {
-      uni.showToast({
-        title: '功能开发中',
-        icon: 'none'
+    // 编辑个人简介
+    goToDescription() {
+      uni.showModal({
+        title: '个人简介',
+        editable: true,
+        placeholderText: '请输入个人简介（最多500字）',
+        content: this.userInfo.description || '',
+        success: async (res) => {
+          if (res.confirm && res.content !== undefined) {
+            try {
+              uni.showLoading({ title: '保存中...', mask: true })
+              const db = uniCloud.database()
+              const userInfo = await uniCloud.getCurrentUserInfo()
+              await db.collection('uni-id-users').doc(userInfo.uid).update({
+                description: res.content.trim()
+              })
+              this.userInfo.description = res.content.trim()
+              uni.hideLoading()
+              uni.showToast({ title: '保存成功', icon: 'success' })
+            } catch (error) {
+              uni.hideLoading()
+              console.error('保存失败:', error)
+              uni.showToast({ title: '保存失败', icon: 'none' })
+            }
+          }
+        }
       })
     },
 
+    // 管理模卡
+    goToCompCards() {
+      uni.navigateTo({
+        url: '/pages/actor/comp_cards'
+      })
+    },
+
+    // 上传模卡
+    async uploadCompCard(type) {
+      try {
+        let file
+        if (type === 'image') {
+          const chooseRes = await new Promise((resolve, reject) => {
+            uni.chooseImage({
+              count: 1,
+              sizeType: ['compressed'],
+              sourceType: ['album', 'camera'],
+              success: resolve,
+              fail: reject
+            })
+          })
+          file = chooseRes.tempFilePaths[0]
+        } else {
+          const chooseRes = await new Promise((resolve, reject) => {
+            uni.chooseVideo({
+              sourceType: ['album', 'camera'],
+              maxDuration: 30,
+              success: resolve,
+              fail: reject
+            })
+          })
+          file = chooseRes.tempFilePath
+        }
+
+        uni.showLoading({ title: '上传中...', mask: true })
+
+        // 上传到云存储
+        const uploadRes = await uniCloud.uploadFile({
+          filePath: file,
+          cloudPath: `comp_cards/${Date.now()}_${type === 'image' ? 'img' : 'video'}`
+        })
+
+        // 更新用户模卡列表
+        const db = uniCloud.database()
+        const userInfo = await uniCloud.getCurrentUserInfo()
+
+        const newCard = {
+          type: type,
+          url: uploadRes.fileID,
+          create_time: Date.now()
+        }
+
+        // JQL 不支持更新操作符，需要先获取当前数组再整体更新
+        const currentCards = this.userInfo.comp_cards || []
+        const updatedCards = [...currentCards, newCard]
+
+        await db.collection('uni-id-users').doc(userInfo.uid).update({
+          comp_cards: updatedCards
+        })
+
+        // 更新本地数据
+        if (!this.userInfo.comp_cards) {
+          this.userInfo.comp_cards = []
+        }
+        this.userInfo.comp_cards.push(newCard)
+
+        uni.hideLoading()
+        uni.showToast({ title: '上传成功', icon: 'success' })
+
+      } catch (error) {
+        uni.hideLoading()
+        if (error.errMsg && error.errMsg.includes('cancel')) {
+          return
+        }
+        console.error('上传失败:', error)
+        uni.showToast({ title: '上传失败', icon: 'none' })
+      }
+    },
+
+    // 实名认证
     goToVerification() {
+      if (this.userInfo.is_realname_auth) {
+        uni.showToast({
+          title: '已完成实名认证',
+          icon: 'success'
+        })
+        return
+      }
+      // TODO: 跳转到实名认证页面
       uni.showToast({
-        title: '功能开发中',
+        title: '实名认证功能开发中',
         icon: 'none'
       })
     },
@@ -467,7 +597,7 @@ export default {
 .profile-page {
   min-height: 100vh;
   background-color: $bg-primary;
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: 120rpx; // TabBar 空间
 }
 
 // 用户信息头部
@@ -746,6 +876,12 @@ export default {
     font-size: $font-size-base;
     color: $primary-color;
     font-family: $font-family-monospace;
+    margin-right: $spacing-sm;
+  }
+
+  .menu-hint {
+    font-size: $font-size-sm;
+    color: $text-secondary;
     margin-right: $spacing-sm;
   }
 

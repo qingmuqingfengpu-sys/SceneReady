@@ -12,7 +12,8 @@
       "Bash(git rm:*)",
       "Bash(del \"\\\\?\\\\D:\\\\学习\\\\大创\\\\艺拍即合\\\\艺拍即合\\\\nul\")",
       "Bash(rm:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "WebFetch(domain:doc.dcloud.net.cn)"
     ],
     "deny": [],
     "ask": []

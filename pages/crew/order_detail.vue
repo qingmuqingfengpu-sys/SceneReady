@@ -118,24 +118,89 @@
         </view>
       </view>
 
-      <!-- 接单人信息（如果有） -->
-      <view class="info-card" v-if="order.order_status >= 1 && order.receiver_id">
+      <!-- 申请者列表（待接单状态显示） -->
+      <view class="info-card" v-if="order.order_status === 0 && applicantsList.length > 0">
+        <view class="card-title">
+          <uni-icons type="person-filled" size="20" color="#FFD700"></uni-icons>
+          <text>申请列表</text>
+          <text class="applicant-count">{{ approvedCount }}/{{ order.people_needed || 1 }}人</text>
+        </view>
+
+        <view class="applicants-list">
+          <view
+            v-for="applicant in applicantsList"
+            :key="applicant.actor_id"
+            class="applicant-item"
+          >
+            <view class="applicant-info" @tap="viewApplicantProfile(applicant)">
+              <image class="applicant-avatar" :src="getActorAvatar(applicant.actor_info)" mode="aspectFill"></image>
+              <view class="applicant-detail">
+                <view class="applicant-name-row">
+                  <text class="applicant-name">{{ applicant.actor_info.nickname || '演员' }}</text>
+                  <view v-if="applicant.actor_info.is_realname_auth" class="verified-tag">
+                    <uni-icons type="auth" size="12" color="#4CAF50"></uni-icons>
+                    <text>已认证</text>
+                  </view>
+                </view>
+                <view class="applicant-meta">
+                  <text v-if="applicant.actor_info.gender_text">{{ applicant.actor_info.gender_text }}</text>
+                  <text v-if="applicant.actor_info.height"> | {{ applicant.actor_info.height }}cm</text>
+                </view>
+                <text class="applicant-desc" v-if="applicant.actor_info.description">{{ applicant.actor_info.description }}</text>
+              </view>
+              <view class="applicant-credit" :class="(applicant.actor_info.credit_score || 100) >= 130 ? 'credit-gold' : ((applicant.actor_info.credit_score || 100) >= 110 ? 'credit-silver' : 'credit-normal')">
+                {{ applicant.actor_info.credit_score || 100 }}
+              </view>
+            </view>
+
+            <!-- 申请状态/操作按钮 -->
+            <view class="applicant-actions">
+              <template v-if="applicant.status === 'pending'">
+                <button class="action-btn reject-btn" @tap.stop="rejectApplicant(applicant)">拒绝</button>
+                <button class="action-btn approve-btn" @tap.stop="approveApplicant(applicant)">通过</button>
+              </template>
+              <template v-else-if="applicant.status === 'approved'">
+                <view class="status-badge approved">
+                  <uni-icons type="checkmarkempty" size="14" color="#4CAF50"></uni-icons>
+                  <text>已通过</text>
+                </view>
+              </template>
+              <template v-else-if="applicant.status === 'rejected'">
+                <view class="status-badge rejected">
+                  <uni-icons type="close" size="14" color="#999"></uni-icons>
+                  <text>已拒绝</text>
+                </view>
+              </template>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 接单人信息（进行中及之后状态显示） -->
+      <view class="info-card" v-if="order.order_status >= 1 && (order.receivers || []).length > 0">
         <view class="card-title">
           <uni-icons type="person-filled" size="20" color="#FFD700"></uni-icons>
           <text>接单演员</text>
+          <text class="applicant-count">{{ (order.receivers || []).length }}人</text>
         </view>
 
-        <view class="receiver-info" @tap="viewReceiverProfile">
-          <image class="receiver-avatar" :src="receiverInfo.avatar || '/static/default-avatar.png'" mode="aspectFill"></image>
-          <view class="receiver-detail">
-            <text class="receiver-name">{{ receiverInfo.nickname || '演员' }}</text>
-            <view class="receiver-meta">
-              <text v-if="receiverInfo.height">{{ receiverInfo.height }}cm</text>
-              <text v-if="receiverInfo.gender"> | {{ receiverInfo.gender === 1 ? '男' : '女' }}</text>
+        <view class="receivers-list">
+          <view
+            v-for="(receiverId, index) in (order.receivers || [])"
+            :key="receiverId"
+            class="receiver-info"
+            @tap="viewReceiverProfileById(receiverId)"
+          >
+            <image class="receiver-avatar" :src="getReceiverAvatar(receiverId)" mode="aspectFill"></image>
+            <view class="receiver-detail">
+              <text class="receiver-name">{{ getReceiverName(receiverId) }}</text>
+              <view class="receiver-meta">
+                <text>{{ getReceiverMeta(receiverId) }}</text>
+              </view>
             </view>
-          </view>
-          <view class="credit-badge" :class="receiverCreditClass">
-            {{ receiverInfo.credit_score || 100 }}
+            <view class="credit-badge" :class="(receiversMap[receiverId] ? receiversMap[receiverId].credit_score || 100 : 100) >= 130 ? 'credit-gold' : ((receiversMap[receiverId] ? receiversMap[receiverId].credit_score || 100 : 100) >= 110 ? 'credit-silver' : 'credit-normal')">
+              {{ receiversMap[receiverId] ? receiversMap[receiverId].credit_score || 100 : 100 }}
+            </view>
           </view>
         </view>
       </view>
@@ -247,6 +312,8 @@ export default {
       orderId: '',
       order: null,
       receiverInfo: {},
+      applicantsList: [],
+      receiversMap: {},
       loading: true,
       loadingText: {
         contentdown: '加载中...',
@@ -299,6 +366,9 @@ export default {
       if (score >= 130) return 'credit-gold'
       if (score >= 110) return 'credit-silver'
       return 'credit-normal'
+    },
+    approvedCount() {
+      return this.applicantsList.filter(a => a.status === 'approved').length
     }
   },
 
@@ -328,8 +398,15 @@ export default {
         if (res.result.data && res.result.data.length > 0) {
           this.order = res.result.data[0]
 
+          // 如果有申请者，加载申请者列表
+          if (this.order.order_status === 0) {
+            await this.loadApplicants()
+          }
+
           // 如果有接单人，加载接单人信息
-          if (this.order.receiver_id) {
+          if (this.order.receivers && this.order.receivers.length > 0) {
+            await this.loadReceiversInfo(this.order.receivers)
+          } else if (this.order.receiver_id) {
             await this.loadReceiverInfo(this.order.receiver_id)
           }
 
@@ -347,12 +424,59 @@ export default {
       }
     },
 
+    // 加载申请者列表
+    async loadApplicants() {
+      try {
+        const orderCo = uniCloud.importObject('order-co')
+        const res = await orderCo.getApplicants(this.orderId)
+
+        if (res.code === 0 && res.data) {
+          this.applicantsList = res.data.list || []
+        }
+      } catch (error) {
+        console.error('加载申请者列表失败:', error)
+      }
+    },
+
+    // 加载多个接单人信息
+    async loadReceiversInfo(receiverIds) {
+      try {
+        const db = uniCloud.database()
+        const dbCmd = db.command
+        const res = await db.collection('uni-id-users')
+          .where({ _id: dbCmd.in(receiverIds) })
+          .field({
+            _id: true,
+            nickname: true,
+            avatar: true,
+            avatar_file: true,
+            height: true,
+            gender: true,
+            credit_score_actor: true
+          })
+          .get()
+
+        if (res.result.data) {
+          res.result.data.forEach(user => {
+            this.receiversMap[user._id] = {
+              ...user,
+              credit_score: user.credit_score_actor || 100,
+              avatar_file: user.avatar_file || null
+            }
+          })
+        }
+      } catch (error) {
+        console.error('加载接单人信息失败:', error)
+      }
+    },
+
     async loadReceiverInfo(receiverId) {
       try {
         const db = uniCloud.database()
         const res = await db.collection('uni-id-users').doc(receiverId).field({
           nickname: true,
           avatar: true,
+          avatar_file: true,
           height: true,
           gender: true,
           credit_score_actor: true
@@ -362,7 +486,8 @@ export default {
           const user = res.result.data[0]
           this.receiverInfo = {
             ...user,
-            credit_score: user.credit_score_actor || 100
+            credit_score: user.credit_score_actor || 100,
+            avatar_file: user.avatar_file || null
           }
         }
       } catch (error) {
@@ -621,6 +746,167 @@ export default {
         title: '功能开发中',
         icon: 'none'
       })
+    },
+
+    // 查看申请者详情
+    viewApplicantProfile(applicant) {
+      // TODO: 弹窗或跳转显示演员详细信息
+      const info = applicant.actor_info
+      const skills = (info.skills || []).map(s => this.skillMap[s] || s).join('、') || '无'
+
+      uni.showModal({
+        title: info.nickname || '演员详情',
+        content: `性别: ${info.gender_text || '未设置'}\n身高: ${info.height || '未设置'}cm\n信用分: ${info.credit_score || 100}\n实名: ${info.is_realname_auth ? '已认证' : '未认证'}\n\n简介: ${info.description || '暂无'}\n\n特长: ${skills}`,
+        showCancel: false,
+        confirmText: '关闭'
+      })
+    },
+
+    // 通过申请
+    async approveApplicant(applicant) {
+      const peopleNeeded = this.order.people_needed || 1
+      const currentApproved = this.approvedCount
+
+      if (currentApproved >= peopleNeeded) {
+        uni.showToast({
+          title: '已达到所需人数',
+          icon: 'none'
+        })
+        return
+      }
+
+      uni.showModal({
+        title: '确认通过',
+        content: `确定通过【${applicant.actor_info.nickname}】的申请吗？`,
+        success: async (res) => {
+          if (res.confirm) {
+            await this.doReviewApplicant(applicant.actor_id, 'approve')
+          }
+        }
+      })
+    },
+
+    // 拒绝申请
+    async rejectApplicant(applicant) {
+      uni.showModal({
+        title: '确认拒绝',
+        content: `确定拒绝【${applicant.actor_info.nickname}】的申请吗？`,
+        success: async (res) => {
+          if (res.confirm) {
+            await this.doReviewApplicant(applicant.actor_id, 'reject')
+          }
+        }
+      })
+    },
+
+    // 执行审核
+    async doReviewApplicant(actorId, action) {
+      uni.showLoading({ title: '处理中...', mask: true })
+
+      try {
+        const orderCo = uniCloud.importObject('order-co')
+        const res = await orderCo.reviewApplicant(this.orderId, actorId, action)
+
+        uni.hideLoading()
+
+        if (res.code === 0) {
+          uni.showToast({
+            title: action === 'approve' ? '已通过' : '已拒绝',
+            icon: 'success'
+          })
+
+          // 更新本地数据
+          const applicant = this.applicantsList.find(a => a.actor_id === actorId)
+          if (applicant) {
+            applicant.status = action === 'approve' ? 'approved' : 'rejected'
+            applicant.review_time = Date.now()
+          }
+
+          // 如果满员，刷新订单状态
+          if (res.data && res.data.is_full) {
+            await this.loadOrderDetail()
+          }
+        } else {
+          uni.showToast({
+            title: res.message || '操作失败',
+            icon: 'none'
+          })
+        }
+      } catch (error) {
+        uni.hideLoading()
+        console.error('审核失败:', error)
+        uni.showToast({
+          title: '网络错误',
+          icon: 'none'
+        })
+      }
+    },
+
+    // 获取申请者信用等级样式
+    getApplicantCreditClass(score) {
+      if (score >= 130) return 'credit-gold'
+      if (score >= 110) return 'credit-silver'
+      return 'credit-normal'
+    },
+
+    // 获取演员头像（处理 avatar_file）
+    getActorAvatar(actorInfo) {
+      if (!actorInfo) return '/static/default-avatar.png'
+      const avatarFile = actorInfo.avatar_file
+      const avatarFileUrl = avatarFile && avatarFile.url ? avatarFile.url : null
+      return avatarFileUrl || actorInfo.avatar || '/static/default-avatar.png'
+    },
+
+    // 获取接单人头像
+    getReceiverAvatar(receiverId) {
+      const receiver = this.receiversMap[receiverId]
+      if (!receiver) return '/static/default-avatar.png'
+      const avatarFile = receiver.avatar_file
+      const avatarFileUrl = avatarFile && avatarFile.url ? avatarFile.url : null
+      return avatarFileUrl || receiver.avatar || '/static/default-avatar.png'
+    },
+
+    // 获取接单人姓名
+    getReceiverName(receiverId) {
+      const receiver = this.receiversMap[receiverId]
+      return receiver ? receiver.nickname || '演员' : '演员'
+    },
+
+    // 获取接单人信息
+    getReceiverMeta(receiverId) {
+      const receiver = this.receiversMap[receiverId]
+      if (!receiver) return ''
+      const parts = []
+      if (receiver.gender) parts.push(receiver.gender === 1 ? '男' : '女')
+      if (receiver.height) parts.push(`${receiver.height}cm`)
+      return parts.join(' | ')
+    },
+
+    // 获取接单人信用分
+    getReceiverCredit(receiverId) {
+      const receiver = this.receiversMap[receiverId]
+      return receiver ? receiver.credit_score || 100 : 100
+    },
+
+    // 获取接单人信用等级样式
+    getReceiverCreditClass(receiverId) {
+      const score = this.getReceiverCredit(receiverId)
+      if (score >= 130) return 'credit-gold'
+      if (score >= 110) return 'credit-silver'
+      return 'credit-normal'
+    },
+
+    // 查看接单人详情
+    viewReceiverProfileById(receiverId) {
+      const receiver = this.receiversMap[receiverId]
+      if (receiver) {
+        uni.showModal({
+          title: receiver.nickname || '演员',
+          content: `性别: ${receiver.gender === 1 ? '男' : (receiver.gender === 2 ? '女' : '未设置')}\n身高: ${receiver.height || '未设置'}cm\n信用分: ${receiver.credit_score || 100}`,
+          showCancel: false,
+          confirmText: '关闭'
+        })
+      }
     },
 
     goBack() {
@@ -1059,5 +1345,185 @@ export default {
     height: 88rpx;
     margin-top: $spacing-base;
   }
+}
+
+// 申请者列表
+.applicant-count {
+  margin-left: auto;
+  padding: 4rpx 16rpx;
+  background-color: rgba($primary-color, 0.2);
+  border-radius: 20rpx;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  color: $primary-color;
+}
+
+.applicants-list {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-base;
+}
+
+.applicant-item {
+  background-color: $bg-tertiary;
+  border-radius: $border-radius-base;
+  padding: $spacing-base;
+  transition: all 0.2s;
+
+  &:active {
+    opacity: 0.9;
+  }
+}
+
+.applicant-info {
+  display: flex;
+  align-items: center;
+  gap: $spacing-base;
+}
+
+.applicant-avatar {
+  width: 100rpx;
+  height: 100rpx;
+  border-radius: 50%;
+  background-color: $gray-4;
+  flex-shrink: 0;
+}
+
+.applicant-detail {
+  flex: 1;
+  min-width: 0;
+  @include flex-column;
+  gap: 6rpx;
+}
+
+.applicant-name-row {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+}
+
+.applicant-name {
+  font-size: $font-size-lg;
+  font-weight: $font-weight-medium;
+  color: $text-primary;
+}
+
+.verified-tag {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  padding: 2rpx 10rpx;
+  background-color: rgba($success-color, 0.15);
+  border-radius: $border-radius-sm;
+
+  text {
+    font-size: $font-size-xs;
+    color: $success-color;
+  }
+}
+
+.applicant-meta {
+  font-size: $font-size-sm;
+  color: $text-secondary;
+}
+
+.applicant-desc {
+  font-size: $font-size-sm;
+  color: $text-hint;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.applicant-credit {
+  padding: 8rpx 16rpx;
+  border-radius: $border-radius-sm;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  flex-shrink: 0;
+
+  &.credit-gold {
+    @include credit-badge('gold');
+  }
+
+  &.credit-silver {
+    @include credit-badge('silver');
+  }
+
+  &.credit-normal {
+    @include credit-badge('normal');
+  }
+}
+
+.applicant-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: $spacing-sm;
+  margin-top: $spacing-base;
+  padding-top: $spacing-base;
+  border-top: 1rpx solid rgba(255, 255, 255, 0.08);
+}
+
+.action-btn {
+  padding: 12rpx 32rpx;
+  border-radius: $border-radius-base;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  border: none;
+  line-height: 1.5;
+
+  &::after {
+    border: none;
+  }
+}
+
+.approve-btn {
+  background: linear-gradient(135deg, $success-color 0%, #66BB6A 100%);
+  color: $white;
+
+  &:active {
+    opacity: 0.85;
+  }
+}
+
+.reject-btn {
+  background-color: rgba($text-hint, 0.15);
+  color: $text-secondary;
+
+  &:active {
+    background-color: rgba($text-hint, 0.25);
+  }
+}
+
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 8rpx 16rpx;
+  border-radius: $border-radius-base;
+  font-size: $font-size-sm;
+
+  &.approved {
+    background-color: rgba($success-color, 0.12);
+
+    text {
+      color: $success-color;
+    }
+  }
+
+  &.rejected {
+    background-color: rgba($text-hint, 0.1);
+
+    text {
+      color: $text-hint;
+    }
+  }
+}
+
+.receivers-list {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
 }
 </style>

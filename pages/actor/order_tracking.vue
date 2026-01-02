@@ -1,34 +1,82 @@
 <template>
   <view class="tracking-page">
-    <!-- 地图区域 -->
-    <map
-      id="trackingMap"
-      class="tracking-map"
-      :latitude="mapCenter.latitude"
-      :longitude="mapCenter.longitude"
-      :scale="mapScale"
-      :markers="markers"
-      :polyline="polyline"
-      :circles="circles"
-      :show-location="true"
-      @regionchange="onRegionChange"
-    >
-      <!-- 状态信息覆盖层 -->
-      <cover-view class="status-overlay">
-        <cover-view class="status-card-cover">
-          <cover-view class="status-title">{{ statusText }}</cover-view>
-          <cover-view class="status-distance">{{ distanceText }}</cover-view>
+    <!-- 申请待审核状态 -->
+    <view v-if="applicationStatus === 'pending'" class="pending-page">
+      <view class="pending-content">
+        <view class="pending-icon">
+          <uni-icons type="clock" size="80" color="#FFD700"></uni-icons>
+        </view>
+        <text class="pending-title">申请审核中</text>
+        <text class="pending-desc">您的申请正在等待剧组审核，请耐心等待</text>
+        <view class="pending-order-info">
+          <view class="order-info-item">
+            <text class="label">订单编号</text>
+            <text class="value">{{ orderId }}</text>
+          </view>
+          <view class="order-info-item">
+            <text class="label">集合地点</text>
+            <text class="value">{{ order.meeting_location_name || '待定' }}</text>
+          </view>
+          <view class="order-info-item">
+            <text class="label">工作时间</text>
+            <text class="value">{{ formatDateTime(order.work_start_time) || '待定' }}</text>
+          </view>
+          <view class="order-info-item">
+            <text class="label">工作报酬</text>
+            <text class="value price">{{ formatPrice(order.price_amount) }}/{{ order.price_unit === 'day' ? '天' : '时' }}</text>
+          </view>
+        </view>
+        <view class="pending-actions">
+          <button class="btn-secondary" @tap="cancelApplication">取消申请</button>
+          <button class="btn-primary" @tap="refreshStatus">刷新状态</button>
+        </view>
+      </view>
+    </view>
+
+    <!-- 申请被拒绝状态 -->
+    <view v-else-if="applicationStatus === 'rejected'" class="rejected-page">
+      <view class="rejected-content">
+        <view class="rejected-icon">
+          <uni-icons type="close" size="80" color="#FF5252"></uni-icons>
+        </view>
+        <text class="rejected-title">申请未通过</text>
+        <text class="rejected-desc">{{ rejectReason || '很遗憾，您的申请未被通过' }}</text>
+        <view class="rejected-actions">
+          <button class="btn-primary" @tap="goBack">返回订单列表</button>
+        </view>
+      </view>
+    </view>
+
+    <!-- 已通过/正常追踪状态 -->
+    <template v-else>
+      <!-- 地图区域 -->
+      <map
+        id="trackingMap"
+        class="tracking-map"
+        :latitude="mapCenter.latitude"
+        :longitude="mapCenter.longitude"
+        :scale="mapScale"
+        :markers="markers"
+        :polyline="polyline"
+        :circles="circles"
+        :show-location="true"
+        @regionchange="onRegionChange"
+      >
+        <!-- 状态信息覆盖层 -->
+        <cover-view class="status-overlay">
+          <cover-view class="status-card-cover">
+            <cover-view class="status-title">{{ statusText }}</cover-view>
+            <cover-view class="status-distance">{{ distanceText }}</cover-view>
+          </cover-view>
         </cover-view>
-      </cover-view>
 
-      <!-- 定位按钮 -->
-      <cover-view class="location-btn" @tap="centerToMyLocation">
-        <cover-view class="location-icon">O</cover-view>
-      </cover-view>
-    </map>
+        <!-- 定位按钮 -->
+        <cover-view class="location-btn" @tap="centerToMyLocation">
+          <cover-view class="location-icon">O</cover-view>
+        </cover-view>
+      </map>
 
-    <!-- 底部信息面板 -->
-    <view class="info-panel">
+      <!-- 底部信息面板 -->
       <!-- 订单信息 -->
       <view class="order-info-section">
         <view class="info-row">
@@ -141,7 +189,7 @@
       <view class="bottom-actions" v-else>
         <button class="btn-secondary" @tap="goBack">返回</button>
       </view>
-    </view>
+    </template>
   </view>
 </template>
 
@@ -173,7 +221,10 @@ export default {
       // 新增状态
       isStarted: false,           // 是否已出发
       isOrderCancelled: false,    // 订单是否被取消
-      cancelledByType: ''         // 取消方: 'crew' | 'actor'
+      cancelledByType: '',        // 取消方: 'crew' | 'actor'
+      // 多人申请模式状态
+      applicationStatus: '',      // 申请状态: '' | 'pending' | 'approved' | 'rejected'
+      rejectReason: ''            // 拒绝原因
     }
   },
 
@@ -198,6 +249,22 @@ export default {
 
         if (res.code === 0 && res.data) {
           this.order = res.data
+
+          // 检查多人申请模式下的申请状态
+          if (res.data.my_application_status) {
+            this.applicationStatus = res.data.my_application_status
+            if (res.data.my_application_status === 'rejected') {
+              this.rejectReason = res.data.my_reject_reason || ''
+            }
+            // 如果申请还在待审核或已拒绝，不继续加载追踪信息
+            if (this.applicationStatus === 'pending' || this.applicationStatus === 'rejected') {
+              // 仍然加载剧组信息用于显示
+              if (this.order.publisher_id) {
+                await this.loadCrewInfo(this.order.publisher_id)
+              }
+              return
+            }
+          }
 
           // 检查订单是否被取消
           if (this.order.order_status === 4) {
@@ -741,6 +808,72 @@ export default {
 
     goBack() {
       uni.navigateBack()
+    },
+
+    // 取消申请
+    async cancelApplication() {
+      uni.showModal({
+        title: '确认取消',
+        content: '确定要取消申请吗？取消后可以重新申请。',
+        success: async (res) => {
+          if (res.confirm) {
+            try {
+              uni.showLoading({ title: '取消中...', mask: true })
+
+              const orderCo = uniCloud.importObject('order-co')
+              const result = await orderCo.cancelApplication(this.orderId)
+
+              uni.hideLoading()
+
+              if (result.code === 0) {
+                uni.showToast({
+                  title: '已取消申请',
+                  icon: 'success'
+                })
+                setTimeout(() => {
+                  uni.navigateBack()
+                }, 1500)
+              } else {
+                uni.showToast({
+                  title: result.message || '取消失败',
+                  icon: 'none'
+                })
+              }
+            } catch (error) {
+              uni.hideLoading()
+              console.error('取消申请失败:', error)
+              uni.showToast({
+                title: '网络错误',
+                icon: 'none'
+              })
+            }
+          }
+        }
+      })
+    },
+
+    // 刷新申请状态
+    async refreshStatus() {
+      uni.showLoading({ title: '刷新中...', mask: true })
+      await this.loadOrderInfo()
+      uni.hideLoading()
+
+      if (this.applicationStatus === 'approved') {
+        uni.showToast({
+          title: '申请已通过！',
+          icon: 'success'
+        })
+      } else if (this.applicationStatus === 'rejected') {
+        uni.showToast({
+          title: '申请未通过',
+          icon: 'none'
+        })
+      } else {
+        uni.showToast({
+          title: '仍在审核中',
+          icon: 'none'
+        })
+      }
     }
   }
 }
@@ -754,6 +887,108 @@ export default {
   height: 100vh;
   position: relative;
   background-color: $bg-primary;
+}
+
+// 申请待审核页面
+.pending-page,
+.rejected-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: $spacing-xl;
+  background-color: $bg-primary;
+}
+
+.pending-content,
+.rejected-content {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.pending-icon,
+.rejected-icon {
+  margin-bottom: $spacing-lg;
+}
+
+.pending-title,
+.rejected-title {
+  font-size: 48rpx;
+  font-weight: $font-weight-bold;
+  color: $text-primary;
+  margin-bottom: $spacing-sm;
+}
+
+.pending-desc,
+.rejected-desc {
+  font-size: $font-size-base;
+  color: $text-secondary;
+  margin-bottom: $spacing-xl;
+}
+
+.pending-order-info {
+  width: 100%;
+  background-color: $bg-secondary;
+  border-radius: $border-radius-lg;
+  padding: $spacing-lg;
+  margin-bottom: $spacing-xl;
+
+  .order-info-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: $spacing-sm 0;
+    border-bottom: 1rpx solid rgba(255, 255, 255, 0.08);
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    .label {
+      font-size: $font-size-sm;
+      color: $text-secondary;
+    }
+
+    .value {
+      font-size: $font-size-base;
+      color: $text-primary;
+      text-align: right;
+      max-width: 60%;
+
+      &.price {
+        color: $primary-color;
+        font-weight: $font-weight-bold;
+      }
+    }
+  }
+}
+
+.pending-actions,
+.rejected-actions {
+  width: 100%;
+  display: flex;
+  gap: $spacing-base;
+
+  button {
+    flex: 1;
+    height: 88rpx;
+    line-height: 88rpx;
+    border-radius: $border-radius-base;
+    font-size: $font-size-base;
+    font-weight: $font-weight-bold;
+  }
+
+  .btn-primary {
+    @include button-primary;
+  }
+
+  .btn-secondary {
+    @include button-secondary;
+  }
 }
 
 .tracking-map {

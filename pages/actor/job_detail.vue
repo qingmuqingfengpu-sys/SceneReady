@@ -20,7 +20,7 @@
 
       <!-- 剧组信息 -->
       <view class="crew-card" @tap="viewCrewProfile">
-        <image class="crew-avatar" :src="crewInfo.avatar || '/static/default-crew.png'" mode="aspectFill"></image>
+        <image class="crew-avatar" :src="crewDisplayAvatar" mode="aspectFill"></image>
         <view class="crew-detail">
           <text class="crew-name">{{ crewInfo.nickname || '剧组' }}</text>
           <view class="crew-meta">
@@ -266,6 +266,11 @@ export default {
   },
 
   computed: {
+    crewDisplayAvatar() {
+      const avatarFile = this.crewInfo.avatar_file
+      const avatarFileUrl = avatarFile && avatarFile.url ? avatarFile.url : null
+      return avatarFileUrl || this.crewInfo.avatar || '/static/default-crew.png'
+    },
     crewCreditClass() {
       const score = this.crewInfo.credit_score || 100
       if (score >= 130) return 'credit-gold'
@@ -352,6 +357,7 @@ export default {
             this.crewInfo = {
               nickname: this.job.publisher_info.nickname || '剧组',
               avatar: this.job.publisher_info.avatar || '',
+              avatar_file: this.job.publisher_info.avatar_file || null,
               credit_score: this.job.publisher_info.credit_score || 100,
               order_count: 0
             }
@@ -380,6 +386,7 @@ export default {
           this.crewInfo = {
             nickname: res.data.nickname || '剧组',
             avatar: res.data.avatar || '',
+            avatar_file: res.data.avatar_file || null,
             credit_score: res.data.credit_score_crew || 100,
             order_count: res.data.order_count || 0
           }
@@ -390,6 +397,7 @@ export default {
         this.crewInfo = {
           nickname: '剧组',
           avatar: '',
+          avatar_file: null,
           credit_score: 100,
           order_count: 0
         }

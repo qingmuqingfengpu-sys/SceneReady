@@ -100,6 +100,8 @@
       </view>
     </view>
 
+    <!-- 底部 TabBar -->
+    <custom-tabbar role="crew" :current="1" @refresh="loadOrders"></custom-tabbar>
   </view>
 </template>
 
@@ -335,6 +337,7 @@ export default {
 .order-list-page {
   min-height: 100vh;
   background-color: $bg-primary;
+  padding-bottom: 120rpx; // TabBar 空间
 }
 
 // 筛选标签
