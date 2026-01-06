@@ -801,8 +801,9 @@ export default {
     },
 
     viewDetail() {
+      // 完成后跳转到我的订单页面
       uni.navigateTo({
-        url: `/pages/actor/job_detail?id=${this.orderId}`
+        url: '/pages/actor/my_orders'
       })
     },
 

@@ -16,7 +16,7 @@
   "requestAuthSecret": "requestAuthSecret-demo",
   "idCardCertifyLimit": 1,
   "realNameCertifyLimit": 5,
-  "sensitiveInfoEncryptSecret": "",
+  "sensitiveInfoEncryptSecret": "YiPaiJiHe2024RealNameVerify32",
   "app": {
     "tokenExpiresIn": 2592000,
     "oauth": {

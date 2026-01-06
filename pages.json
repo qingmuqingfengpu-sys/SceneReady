@@ -111,6 +111,12 @@
 				"enablePullDownRefresh": false
 			}
 		},{
+			"path": "pages/crew/actor_detail",
+			"style": {
+				"navigationBarTitleText": "演员详情",
+				"enablePullDownRefresh": true
+			}
+		},{
 			"path": "pages/crew/profile",
 			"style": {
 				"navigationBarTitleText": "剧组中心",

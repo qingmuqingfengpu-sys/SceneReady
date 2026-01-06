@@ -42,7 +42,7 @@
 
         <view class="info-row">
           <text class="info-label">需求人数</text>
-          <text class="info-value highlight">{{ job.actor_count || 1 }}人</text>
+          <text class="info-value highlight">{{ job.people_needed || 1 }}人</text>
         </view>
 
         <view class="info-row" v-if="job.work_start_time">
@@ -170,6 +170,9 @@
         <button v-if="isOrderCancelled" class="grab-btn disabled" disabled>
           订单已取消
         </button>
+        <button v-else-if="isOrderCompleted" class="grab-btn completed" disabled>
+          已完成
+        </button>
         <button v-else class="grab-btn" @tap="goToTracking">
           履约追踪
         </button>
@@ -238,6 +241,7 @@ export default {
       isGrabbing: false,
       isOrderCancelled: false,    // 订单是否被取消
       cancelledByType: '',        // 取消方: 'crew' | 'actor'
+      isOrderCompleted: false,    // 订单是否已完成
       skillMap: {
         'driving': '开车',
         'dancing': '跳舞',
@@ -334,6 +338,11 @@ export default {
             } else if (this.job.actor_cancel_reason) {
               this.cancelledByType = 'actor'
             }
+          }
+
+          // 检查订单是否已完成
+          if (this.job.order_status === 3) {
+            this.isOrderCompleted = true
           }
 
           // 设置地图位置
@@ -964,6 +973,11 @@ export default {
     &.disabled {
       background: $gray-4;
       opacity: 0.7;
+    }
+
+    &.completed {
+      background: linear-gradient(135deg, #4CAF50 0%, #81C784 100%);
+      opacity: 0.8;
     }
   }
 }

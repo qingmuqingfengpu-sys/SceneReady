@@ -107,7 +107,7 @@
             <view v-else-if="job.order_status === 4" class="status-tag cancelled">
               <text>已取消</text>
             </view>
-            <view v-else-if="job.order_status === 1 || job.order_status === 2" class="status-tag in-progress">
+            <view v-else-if="job.order_status === 2" class="status-tag in-progress">
               <text>进行中</text>
             </view>
             <!-- 已满员/已被抢状态 -->
@@ -115,7 +115,12 @@
               <text>已被抢</text>
             </view>
             <!-- 可申请状态 -->
-            <button v-else class="grab-btn" size="mini" @tap.stop="applyOrder(job)">申请</button>
+            <view v-else class="action-wrap">
+              <button class="grab-btn" size="mini" @tap.stop="applyOrder(job)">申请</button>
+              <view v-if="job.order_status === 1" class="status-tag in-progress ongoing-hint">
+                <text>进行中</text>
+              </view>
+            </view>
             <text v-if="job.order_type === 'immediate'" class="order-type-tag immediate">即时单</text>
             <text v-else class="order-type-tag reservation">预约单</text>
           </view>
@@ -725,10 +730,11 @@ export default {
       }
     },
 
-    // 判断订单是否不可用（已满员）
+    // 判断订单是否不可用（已满员或已结束）
     isJobUnavailable(job) {
-      // 检查订单状态或接单者数量
-      if (job.order_status !== 0) return true
+      // 已完成(3)、已取消(4)、待支付(2)的订单不可申请
+      if (job.order_status >= 2) return true
+      // 检查是否已满员
       const receivers = job.receivers || []
       const peopleNeeded = job.people_needed || 1
       return receivers.length >= peopleNeeded
@@ -1097,6 +1103,17 @@ export default {
   @include button-primary;
   padding: 12rpx 32rpx;
   font-size: $font-size-base;
+}
+
+.action-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8rpx;
+}
+
+.ongoing-hint {
+  padding: 8rpx 16rpx;
 }
 
 .order-type-tag {

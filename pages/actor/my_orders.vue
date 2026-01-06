@@ -68,10 +68,6 @@
               <template v-if="order.order_status === 1">
                 <button class="action-btn primary" @tap.stop="goToTracking(order)">履约追踪</button>
               </template>
-              <!-- 待支付状态 -->
-              <template v-else-if="order.order_status === 2">
-                <button class="action-btn" @tap.stop="contactCrew(order)">联系剧组</button>
-              </template>
               <!-- 已完成状态 -->
               <template v-else-if="order.order_status === 3">
                 <button class="action-btn" @tap.stop="rateOrder(order)" v-if="!order.is_rated">去评价</button>
@@ -145,7 +141,6 @@ export default {
       statusTabs: [
         { label: '全部', value: -1, count: 0 },
         { label: '进行中', value: 1, count: 0 },
-        { label: '待结算', value: 2, count: 0 },
         { label: '已完成', value: 3, count: 0 },
         { label: '已取消', value: 4, count: 0 }
       ],
@@ -165,7 +160,6 @@ export default {
       statusClassMap: {
         0: 'pending',
         1: 'ongoing',
-        2: 'payment',
         3: 'completed',
         4: 'canceled'
       },
@@ -211,18 +205,17 @@ export default {
           return
         }
 
-        let query = db.collection('orders').where({
+        // 构建查询条件，确保始终包含 receiver_id
+        let whereCondition = {
           receiver_id: userId
-        })
+        }
 
         // 状态筛选
         if (this.currentStatus !== -1) {
-          query = query.where({
-            order_status: this.currentStatus
-          })
+          whereCondition.order_status = this.currentStatus
         }
 
-        const res = await query
+        const res = await db.collection('orders').where(whereCondition)
           .orderBy('create_time', 'desc')
           .skip((this.page - 1) * this.pageSize)
           .limit(this.pageSize)
@@ -260,19 +253,17 @@ export default {
         if (!userId) return
 
         // 并行查询各状态数量
-        const [allRes, ongoingRes, paymentRes, completedRes, canceledRes] = await Promise.all([
+        const [allRes, ongoingRes, completedRes, canceledRes] = await Promise.all([
           db.collection('orders').where({ receiver_id: userId }).count(),
           db.collection('orders').where({ receiver_id: userId, order_status: 1 }).count(),
-          db.collection('orders').where({ receiver_id: userId, order_status: 2 }).count(),
           db.collection('orders').where({ receiver_id: userId, order_status: 3 }).count(),
           db.collection('orders').where({ receiver_id: userId, order_status: 4 }).count()
         ])
 
         this.statusTabs[0].count = allRes.total
         this.statusTabs[1].count = ongoingRes.total
-        this.statusTabs[2].count = paymentRes.total
-        this.statusTabs[3].count = completedRes.total
-        this.statusTabs[4].count = canceledRes.total
+        this.statusTabs[2].count = completedRes.total
+        this.statusTabs[3].count = canceledRes.total
       } catch (error) {
         console.error('加载状态数量失败:', error)
       }
@@ -321,7 +312,6 @@ export default {
       const textMap = {
         0: '待接单',
         1: '进行中',
-        2: '待结算',
         3: '已完成'
       }
       return textMap[status] || '未知'
@@ -331,7 +321,6 @@ export default {
       const classMap = {
         0: 'pending',
         1: 'ongoing',
-        2: 'payment',
         3: 'completed',
         4: 'canceled'
       }
@@ -376,14 +365,6 @@ export default {
     goToTracking(order) {
       uni.navigateTo({
         url: `/pages/actor/order_tracking?id=${order._id}`
-      })
-    },
-
-    contactCrew(order) {
-      // TODO: 联系剧组
-      uni.showToast({
-        title: '功能开发中',
-        icon: 'none'
       })
     },
 
@@ -568,10 +549,6 @@ export default {
 
     &.ongoing {
       color: $secondary-color;
-    }
-
-    &.payment {
-      color: $primary-color;
     }
 
     &.completed {

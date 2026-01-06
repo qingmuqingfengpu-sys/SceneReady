@@ -7,8 +7,24 @@
 		<uni-list>
 			<uni-list-item class="item" @click="setNickname('')" title="昵称" :rightText="userInfo.nickname||'未设置'" link>
 			</uni-list-item>
+			<uni-list-item class="item" @click="setGender" title="性别" :rightText="genderText" link>
+			</uni-list-item>
+			<uni-list-item class="item" @click="setHeight" title="身高" :rightText="heightText" link>
+			</uni-list-item>
+			<uni-list-item class="item" @click="setWechatId" title="微信号" :rightText="userInfo.wechat_id||'未设置'" link>
+			</uni-list-item>
+			<!-- #ifdef MP-WEIXIN -->
+			<view class="phone-item">
+				<text class="phone-label">手机号</text>
+				<button class="phone-btn" open-type="getPhoneNumber" @getphonenumber="onGetPhoneNumber">
+					<text class="phone-text">{{ userInfo.mobile || '点击获取' }}</text>
+				</button>
+			</view>
+			<!-- #endif -->
+			<!-- #ifndef MP-WEIXIN -->
 			<uni-list-item class="item" @click="bindMobile" title="手机号" :rightText="userInfo.mobile||'未绑定'" link>
 			</uni-list-item>
+			<!-- #endif -->
 			<uni-list-item v-if="userInfo.email" class="item" title="电子邮箱" :rightText="userInfo.email">
 			</uni-list-item>
 			<!-- #ifdef APP -->
@@ -53,6 +69,13 @@ const uniIdCo = uniCloud.importObject("uni-id-co")
 		  }
 
 		  return this.userInfo.realNameAuth.authStatus
+	  },
+	  genderText() {
+		  const genderMap = { 0: '未设置', 1: '男', 2: '女' }
+		  return genderMap[this.userInfo.gender] || '未设置'
+	  },
+	  heightText() {
+		  return this.userInfo.height ? `${this.userInfo.height}cm` : '未设置'
 	  }
     },
 		data() {
@@ -213,6 +236,87 @@ const uniIdCo = uniCloud.importObject("uni-id-co")
 				uni.navigateTo({
 					url: "/uni_modules/uni-id-pages/pages/userinfo/realname-verify/realname-verify"
 				})
+			},
+			setGender() {
+				uni.showActionSheet({
+					itemList: ['男', '女'],
+					success: (res) => {
+						const gender = res.tapIndex + 1 // 1:男, 2:女
+						mutations.updateUserInfo({ gender })
+					}
+				})
+			},
+			setHeight() {
+				uni.showModal({
+					title: '设置身高',
+					editable: true,
+					placeholderText: '请输入身高(cm)，如170',
+					content: this.userInfo.height ? String(this.userInfo.height) : '',
+					success: (res) => {
+						if (res.confirm && res.content) {
+							const height = parseInt(res.content)
+							if (height >= 100 && height <= 250) {
+								mutations.updateUserInfo({ height })
+							} else {
+								uni.showToast({
+									title: '请输入有效身高(100-250cm)',
+									icon: 'none'
+								})
+							}
+						}
+					}
+				})
+			},
+			setWechatId() {
+				uni.showModal({
+					title: '设置微信号',
+					editable: true,
+					placeholderText: '请输入您的微信号',
+					content: this.userInfo.wechat_id || '',
+					success: (res) => {
+						if (res.confirm && res.content !== undefined) {
+							const wechat_id = res.content.trim()
+							if (wechat_id) {
+								mutations.updateUserInfo({ wechat_id })
+							}
+						}
+					}
+				})
+			},
+			async onGetPhoneNumber(e) {
+				console.log('getPhoneNumber result:', e.detail)
+				if (e.detail.errMsg !== 'getPhoneNumber:ok') {
+					console.log('用户拒绝授权手机号')
+					return
+				}
+				try {
+					uni.showLoading({ title: '获取中...', mask: true })
+					// 新版API使用code，旧版使用encryptedData+iv
+					let res
+					if (e.detail.code) {
+						// 新版API (2023年后)
+						res = await uniIdCo.bindMobileByMpWeixin({
+							phoneCode: e.detail.code
+						})
+					} else {
+						// 旧版API
+						res = await uniIdCo.bindMobileByMpWeixin({
+							encryptedData: e.detail.encryptedData,
+							iv: e.detail.iv
+						})
+					}
+					if (res.errCode === 0) {
+						uni.showToast({ title: '绑定成功', icon: 'success' })
+						mutations.updateUserInfo()
+					} else {
+						uni.showToast({ title: res.errMsg || '绑定失败', icon: 'none' })
+					}
+				} catch (err) {
+					console.error('绑定手机号失败:', err)
+					uni.showToast({ title: err.message || '绑定失败', icon: 'none' })
+				} finally {
+					uni.hideLoading()
+				}
 			}
 		}
 	}
@@ -268,5 +372,39 @@ const uniIdCo = uniCloud.importObject("uni-id-co")
 
 	.mt10 {
 		margin-top: 10px;
+	}
+
+	.phone-item {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding: 12px 15px;
+		background-color: #fff;
+		border-bottom: 1px solid #eee;
+
+		.phone-label {
+			font-size: 14px;
+			color: #333;
+		}
+
+		.phone-btn {
+			display: flex;
+			align-items: center;
+			background-color: transparent;
+			border: none;
+			padding: 0;
+			margin: 0;
+			line-height: 1;
+
+			&::after {
+				border: none;
+			}
+
+			.phone-text {
+				font-size: 14px;
+				color: #999;
+			}
+		}
 	}
 </style>

@@ -511,6 +511,24 @@ module.exports = {
         order.my_application_status = 'approved'
       }
 
+      // 添加当前演员的追踪状态(多人订单支持)
+      const actorTracking = order.actor_tracking || {}
+      const myTracking = actorTracking[userId]
+      if (myTracking) {
+        order.my_tracking = myTracking
+        // 覆盖旧的全局字段，使用该演员自己的状态
+        order.tracking_started = myTracking.tracking_started || false
+        order.arrive_time = myTracking.arrive_time || null
+      } else if (isReceiver) {
+        // 兼容旧数据，如果没有actor_tracking但是是接单者
+        order.my_tracking = {
+          tracking_started: order.tracking_started || false,
+          tracking_start_time: order.tracking_start_time || null,
+          arrive_time: order.arrive_time || null,
+          is_completed: order.order_status === 3
+        }
+      }
+
       return {
         code: 0,
         data: order
@@ -640,8 +658,9 @@ module.exports = {
         }
       }
 
-      // 3. 检查订单状态(必须是待接单)
-      if (order.order_status !== 0) {
+      // 3. 检查订单状态(必须是待接单或进行中)
+      // 多人订单允许在进行中状态继续申请(未满员时)
+      if (order.order_status !== 0 && order.order_status !== 1) {
         return {
           code: 400,
           message: '该订单已停止接受申请'
@@ -669,15 +688,8 @@ module.exports = {
         }
       }
 
-      // 6. 检查是否已满员
-      const approvedCount = applicants.filter(a => a.status === 'approved').length
-      const peopleNeeded = order.people_needed || 1
-      if (approvedCount >= peopleNeeded) {
-        return {
-          code: 400,
-          message: '该订单已满员'
-        }
-      }
+      // 6. 允许超过需求人数的人申请，剧组可以选择通过
+      // 不再检查是否已满员，让剧组自行决定是否通过
 
       // 7. 检查演员是否符合要求
       const matchResult = await checkActorMatch(userId, order)
@@ -755,8 +767,8 @@ module.exports = {
         return { code: 403, message: '无权审核此订单' }
       }
 
-      // 3. 检查订单状态
-      if (order.order_status !== 0) {
+      // 3. 检查订单状态：待接单或进行中都允许继续审核
+      if (![0, 1].includes(order.order_status)) {
         return { code: 400, message: '订单状态不允许审核' }
       }
 
@@ -772,12 +784,11 @@ module.exports = {
         return { code: 400, message: '该申请已被处理' }
       }
 
-      // 5. 如果是通过，检查是否已满员
+      // 5. 如果是通过，检查是否已满员(但仍允许剧组继续通过)
       const approvedCount = applicants.filter(a => a.status === 'approved').length
       const peopleNeeded = order.people_needed || 1
-      if (action === 'approve' && approvedCount >= peopleNeeded) {
-        return { code: 400, message: '该订单已满员，无法再通过申请' }
-      }
+      // 不再阻止通过，只是给出提示信息
+      const isAlreadyFull = approvedCount >= peopleNeeded
 
       // 6. 更新申请状态
       const now = Date.now()
@@ -804,9 +815,19 @@ module.exports = {
           updateData.receiver_id = actorId
         }
 
-        // 检查是否满员
-        const newApprovedCount = approvedCount + 1
-        if (newApprovedCount >= peopleNeeded) {
+        // 初始化该演员的追踪状态
+        const actorTracking = order.actor_tracking || {}
+        actorTracking[actorId] = {
+          tracking_started: false,
+          tracking_start_time: null,
+          arrive_time: null,
+          is_completed: false
+        }
+        updateData.actor_tracking = actorTracking
+
+        // 多人订单：只要有一人通过就进入进行中状态
+        // 这样每个演员都可以独立开始履约追踪
+        if (order.order_status === 0) {
           updateData.order_status = 1 // 进行中
           updateData.grab_time = now
         }
@@ -816,6 +837,8 @@ module.exports = {
         .doc(orderId)
         .update(updateData)
 
+      const newApprovedCount = approvedCount + 1
+
       return {
         code: 0,
         message: action === 'approve' ? '已通过该演员的申请' : '已拒绝该演员的申请',
@@ -823,7 +846,9 @@ module.exports = {
           order_id: orderId,
           actor_id: actorId,
           action: action,
-          is_full: action === 'approve' && (approvedCount + 1) >= peopleNeeded
+          approved_count: action === 'approve' ? newApprovedCount : approvedCount,
+          people_needed: peopleNeeded,
+          is_full: action === 'approve' && newApprovedCount >= peopleNeeded
         }
       }
 
@@ -897,7 +922,9 @@ module.exports = {
           comp_cards: true,
           video_card_url: true,
           credit_score_actor: true,
-          is_realname_auth: true
+          is_realname_auth: true,
+          mobile: true,
+          wechat_id: true
         })
         .get()
 
@@ -925,7 +952,9 @@ module.exports = {
             comp_cards: actor.comp_cards || [],
             video_card_url: actor.video_card_url || '',
             credit_score: actor.credit_score_actor || 100,
-            is_realname_auth: actor.is_realname_auth || false
+            is_realname_auth: actor.is_realname_auth || false,
+            mobile: actor.mobile || '',
+            wechat_id: actor.wechat_id || ''
           }
         }
       })
@@ -1493,9 +1522,9 @@ module.exports = {
       // 构建查询条件
       let whereCondition = {}
 
-      // 如果不是显示全部,只查询待接单状态的订单
+      // 如果不是显示全部,查询待接单和进行中(多人单可能还有名额)的订单
       if (!showAll) {
-        whereCondition.order_status = 0 // 待接单
+        whereCondition.order_status = dbCmd.in([0, 1]) // 待接单 + 进行中
       }
 
       // 价格筛选
@@ -1616,7 +1645,7 @@ module.exports = {
       }
 
       // 处理返回数据
-      const list = orders.map(order => {
+      let list = orders.map(order => {
         const publisher = publisherMap[order.publisher_id] || {}
         return {
           ...order,
@@ -1630,6 +1659,16 @@ module.exports = {
           }
         }
       })
+
+      // 如果不是showAll模式，过滤掉已满员的订单
+      if (!showAll) {
+        list = list.filter(order => {
+          const receivers = order.receivers || []
+          const peopleNeeded = order.people_needed || 1
+          // 只显示还有名额的订单
+          return receivers.length < peopleNeeded
+        })
+      }
 
       return {
         code: 0,
@@ -1770,8 +1809,9 @@ module.exports = {
 
       const order = orderRes.data[0]
 
-      // 权限检查(必须是该订单的演员)
-      if (order.receiver_id !== userId) {
+      // 权限检查(必须是该订单的接单演员之一)
+      const receivers = order.receivers || []
+      if (!receivers.includes(userId) && order.receiver_id !== userId) {
         return {
           code: 403,
           message: '无权提交此订单轨迹'
@@ -1786,8 +1826,10 @@ module.exports = {
         }
       }
 
-      // 检查是否已开始轨迹追踪(必须先点击"我已出发")
-      if (!order.tracking_started) {
+      // 检查该演员是否已开始轨迹追踪(必须先点击"我已出发")
+      const actorTracking = order.actor_tracking || {}
+      const myTracking = actorTracking[userId]
+      if (!myTracking || !myTracking.tracking_started) {
         return {
           code: 400,
           message: '请先点击"我已出发"开始轨迹追踪'
@@ -1972,8 +2014,9 @@ module.exports = {
 
       const order = orderRes.data[0]
 
-      // 权限检查
-      if (order.receiver_id !== userId) {
+      // 权限检查(必须是该订单的接单演员之一)
+      const receivers = order.receivers || []
+      if (!receivers.includes(userId) && order.receiver_id !== userId) {
         return {
           code: 403,
           message: '无权为此订单打卡'
@@ -1988,8 +2031,10 @@ module.exports = {
         }
       }
 
-      // 检查是否已打卡
-      if (order.arrive_time) {
+      // 检查该演员是否已打卡(从actor_tracking中检查)
+      const actorTracking = order.actor_tracking || {}
+      const myTracking = actorTracking[userId]
+      if (myTracking && myTracking.arrive_time) {
         return {
           code: 400,
           message: '已经打卡过了'
@@ -2026,10 +2071,20 @@ module.exports = {
 
       // 记录打卡
       const now = Date.now()
+
+      // 更新该演员的打卡状态
+      const actorTrackingUpdate = order.actor_tracking || {}
+      actorTrackingUpdate[userId] = {
+        ...(actorTrackingUpdate[userId] || {}),
+        arrive_time: now
+      }
+
       await db.collection('orders')
         .doc(orderId)
         .update({
-          arrive_time: now,
+          actor_tracking: actorTrackingUpdate,
+          // 保持向后兼容：如果是第一个打卡的演员，也更新旧字段
+          arrive_time: order.arrive_time || now,
           update_time: now
         })
 
@@ -2424,8 +2479,9 @@ module.exports = {
 
       const order = orderRes.data[0]
 
-      // 权限检查(必须是该订单的演员)
-      if (order.receiver_id !== userId) {
+      // 权限检查(必须是该订单的接单演员之一)
+      const receivers = order.receivers || []
+      if (!receivers.includes(userId) && order.receiver_id !== userId) {
         return {
           code: 403,
           message: '无权操作此订单'
@@ -2440,8 +2496,10 @@ module.exports = {
         }
       }
 
-      // 检查是否已经出发
-      if (order.tracking_started) {
+      // 检查该演员是否已经出发(从actor_tracking中检查)
+      const actorTracking = order.actor_tracking || {}
+      const myTracking = actorTracking[userId]
+      if (myTracking && myTracking.tracking_started) {
         return {
           code: 400,
           message: '您已经点击过出发了'
@@ -2450,13 +2508,22 @@ module.exports = {
 
       const now = Date.now()
 
+      // 更新该演员的追踪状态
+      actorTracking[userId] = {
+        ...(myTracking || {}),
+        tracking_started: true,
+        tracking_start_time: now
+      }
+
       // 更新订单
       await db.collection('orders')
         .doc(orderId)
         .update({
+          actor_tracking: actorTracking,
+          // 保持向后兼容：如果是第一个出发的演员，也更新旧字段
           tracking_started: true,
-          tracking_start_time: now,
-          start_off_time: now,
+          tracking_start_time: order.tracking_start_time || now,
+          start_off_time: order.start_off_time || now,
           update_time: now
         })
 
@@ -2939,6 +3006,221 @@ module.exports = {
 
     } catch (error) {
       console.error('获取演员订单列表失败:', error)
+      return {
+        code: 500,
+        message: error.message || '系统错误'
+      }
+    }
+  },
+
+  /**
+   * 获取特定演员的追踪信息 - 剧组端
+   * @param {String} orderId 订单ID
+   * @param {String} actorId 演员ID
+   * @returns {Object} 演员追踪信息
+   */
+  async getActorTracking(orderId, actorId) {
+    try {
+      const userId = this.authInfo && this.authInfo.uid
+
+      if (!userId) {
+        return { code: 401, message: '请先登录' }
+      }
+
+      // 查询订单
+      const orderRes = await db.collection('orders')
+        .doc(orderId)
+        .get()
+
+      const order = Array.isArray(orderRes.data) ? orderRes.data[0] : orderRes.data
+      if (!order) {
+        return { code: 404, message: '订单不存在' }
+      }
+
+      // 权限检查(必须是发布者)
+      if (order.publisher_id !== userId) {
+        return { code: 403, message: '无权查看此信息' }
+      }
+
+      // 检查演员是否在接单者列表中
+      const receivers = order.receivers || []
+      if (!receivers.includes(actorId)) {
+        return { code: 400, message: '该演员不是此订单的接单者' }
+      }
+
+      // 获取演员追踪状态
+      const actorTracking = order.actor_tracking || {}
+      const tracking = actorTracking[actorId] || {
+        tracking_started: false,
+        tracking_start_time: null,
+        arrive_time: null,
+        is_completed: false
+      }
+
+      // 获取该演员的轨迹记录
+      const tracksRes = await db.collection('order_tracks')
+        .where({
+          order_id: orderId,
+          user_id: actorId
+        })
+        .orderBy('report_time', 'desc')
+        .limit(50)
+        .get()
+
+      const tracks = tracksRes.data || []
+
+      // 获取最新位置
+      const latestTrack = tracks.length > 0 ? tracks[0] : null
+
+      // 获取演员信息
+      const actorRes = await db.collection('uni-id-users')
+        .doc(actorId)
+        .field({
+          nickname: true,
+          avatar: true,
+          avatar_file: true,
+          mobile: true
+        })
+        .get()
+
+      const actorInfo = actorRes.data && actorRes.data.length > 0 ? actorRes.data[0] : {}
+
+      return {
+        code: 0,
+        data: {
+          order_id: orderId,
+          actor_id: actorId,
+          actor_info: {
+            nickname: actorInfo.nickname || '演员',
+            avatar: actorInfo.avatar || '',
+            avatar_file: actorInfo.avatar_file || null,
+            mobile: actorInfo.mobile || ''
+          },
+          tracking: tracking,
+          meeting_location: order.meeting_location,
+          meeting_location_name: order.meeting_location_name,
+          meeting_time: order.meeting_time,
+          order_status: order.order_status,
+          latest_location: latestTrack ? {
+            location: latestTrack.location,
+            report_time: latestTrack.report_time,
+            distance_to_destination: latestTrack.distance_to_destination
+          } : null,
+          tracks: tracks.map(t => ({
+            location: t.location,
+            report_time: t.report_time,
+            distance_to_destination: t.distance_to_destination,
+            track_type: t.track_type
+          })).reverse(),
+          is_online: latestTrack ? (Date.now() - latestTrack.report_time < 60000) : false
+        }
+      }
+
+    } catch (error) {
+      console.error('获取演员追踪信息失败:', error)
+      return {
+        code: 500,
+        message: error.message || '系统错误'
+      }
+    }
+  },
+
+  /**
+   * 完成单个演员的订单 - 剧组端
+   * @param {String} orderId 订单ID
+   * @param {String} actorId 演员ID
+   * @returns {Object} 操作结果
+   */
+  async completeActorOrder(orderId, actorId) {
+    try {
+      const userId = this.authInfo && this.authInfo.uid
+
+      if (!userId) {
+        return { code: 401, message: '请先登录' }
+      }
+
+      // 查询订单
+      const orderRes = await db.collection('orders')
+        .doc(orderId)
+        .get()
+
+      const order = Array.isArray(orderRes.data) ? orderRes.data[0] : orderRes.data
+      if (!order) {
+        return { code: 404, message: '订单不存在' }
+      }
+
+      // 权限检查(必须是发布者)
+      if (order.publisher_id !== userId) {
+        return { code: 403, message: '仅剧组方可以确认订单完成' }
+      }
+
+      // 状态检查(必须是进行中)
+      if (order.order_status !== 1) {
+        return { code: 400, message: '当前订单状态不允许完成' }
+      }
+
+      // 检查演员是否在接单者列表中
+      const receivers = order.receivers || []
+      if (!receivers.includes(actorId)) {
+        return { code: 400, message: '该演员不是此订单的接单者' }
+      }
+
+      // 检查演员是否已打卡
+      const actorTracking = order.actor_tracking || {}
+      const tracking = actorTracking[actorId]
+      if (!tracking || !tracking.arrive_time) {
+        return { code: 400, message: '该演员尚未打卡，无法完成' }
+      }
+
+      const now = Date.now()
+
+      // 更新该演员的完成状态
+      actorTracking[actorId] = {
+        ...tracking,
+        is_completed: true,
+        complete_time: now
+      }
+
+      // 检查是否所有演员都已完成
+      const allCompleted = receivers.every(rid => {
+        const t = actorTracking[rid]
+        return t && t.is_completed
+      })
+
+      const updateData = {
+        actor_tracking: actorTracking,
+        update_time: now
+      }
+
+      // 如果所有人都完成了，更新订单状态
+      if (allCompleted) {
+        updateData.order_status = 3 // 已完成
+        updateData.finish_time = now
+      }
+
+      await db.collection('orders')
+        .doc(orderId)
+        .update(updateData)
+
+      // 给演员加信用分
+      await db.collection('uni-id-users')
+        .doc(actorId)
+        .update({
+          credit_score_actor: dbCmd.inc(5) // 完成订单加5分
+        })
+
+      return {
+        code: 0,
+        message: allCompleted ? '所有演员已完成，订单已结束' : '已确认该演员完成',
+        data: {
+          actor_id: actorId,
+          is_completed: true,
+          all_completed: allCompleted
+        }
+      }
+
+    } catch (error) {
+      console.error('完成演员订单失败:', error)
       return {
         code: 500,
         message: error.message || '系统错误'

@@ -18,236 +18,556 @@
         </view>
       </view>
 
-      <!-- 订单信息卡片 -->
-      <view class="info-card">
-        <view class="card-title">
-          <uni-icons type="info" size="20" color="#FFD700"></uni-icons>
-          <text>订单信息</text>
-        </view>
-
-        <view class="info-row">
-          <text class="info-label">订单编号</text>
-          <text class="info-value mono">{{ order._id }}</text>
-        </view>
-
-        <view class="info-row">
-          <text class="info-label">创建时间</text>
-          <text class="info-value">{{ formatDateTime(order.create_time) }}</text>
-        </view>
-
-        <view class="info-row">
-          <text class="info-label">订单类型</text>
-          <view class="order-type-tag" :class="order.order_type === 1 ? 'instant' : 'scheduled'">
-            {{ order.order_type === 1 ? '即时单' : '预约单' }}
-          </view>
-        </view>
-
-        <view class="info-row">
-          <text class="info-label">需求人数</text>
-          <text class="info-value highlight">{{ order.actor_count || 1 }}人</text>
-        </view>
-
-        <view class="info-row">
-          <text class="info-label">报酬金额</text>
-          <text class="info-value price">{{ formatPrice(order.price_amount) }}/{{ order.price_unit === 'day' ? '天' : '时' }}</text>
-        </view>
-      </view>
-
-      <!-- 工作信息卡片 -->
-      <view class="info-card">
-        <view class="card-title">
-          <uni-icons type="location" size="20" color="#FFD700"></uni-icons>
-          <text>工作信息</text>
-        </view>
-
-        <view class="info-row">
-          <text class="info-label">集合地点</text>
-          <text class="info-value">{{ order.meeting_location_name }}</text>
-        </view>
-
-        <view class="info-row" v-if="order.work_start_time">
-          <text class="info-label">工作时间</text>
-          <text class="info-value">{{ formatDateTime(order.work_start_time) }}</text>
-        </view>
-
-        <view class="info-row" v-if="order.role_description">
-          <text class="info-label">角色描述</text>
-          <text class="info-value desc">{{ order.role_description }}</text>
-        </view>
-      </view>
-
-      <!-- 演员要求卡片 -->
-      <view class="info-card">
-        <view class="card-title">
-          <uni-icons type="person" size="20" color="#FFD700"></uni-icons>
-          <text>演员要求</text>
-        </view>
-
-        <view class="info-row" v-if="order.gender_requirement">
-          <text class="info-label">性别</text>
-          <text class="info-value">{{ getGenderText(order.gender_requirement) }}</text>
-        </view>
-
-        <view class="info-row" v-if="order.height_min || order.height_max">
-          <text class="info-label">身高</text>
-          <text class="info-value">{{ order.height_min || '不限' }}cm - {{ order.height_max || '不限' }}cm</text>
-        </view>
-
-        <view class="info-row" v-if="order.body_type">
-          <text class="info-label">体型</text>
-          <text class="info-value">{{ order.body_type }}</text>
-        </view>
-
-        <view class="info-row" v-if="order.skill_requirements && order.skill_requirements.length">
-          <text class="info-label">特长要求</text>
-          <view class="skill-tags">
-            <text v-for="skill in order.skill_requirements" :key="skill" class="skill-tag">{{ getSkillLabel(skill) }}</text>
-          </view>
-        </view>
-      </view>
-
-      <!-- 福利待遇卡片 -->
-      <view class="info-card" v-if="order.welfare_tags && order.welfare_tags.length">
-        <view class="card-title">
-          <uni-icons type="gift" size="20" color="#FFD700"></uni-icons>
-          <text>福利待遇</text>
-        </view>
-
-        <view class="welfare-tags">
-          <text v-for="tag in order.welfare_tags" :key="tag" class="welfare-tag">{{ getWelfareLabel(tag) }}</text>
-        </view>
-      </view>
-
-      <!-- 申请者列表（待接单状态显示） -->
-      <view class="info-card" v-if="order.order_status === 0 && applicantsList.length > 0">
-        <view class="card-title">
-          <uni-icons type="person-filled" size="20" color="#FFD700"></uni-icons>
-          <text>申请列表</text>
-          <text class="applicant-count">{{ approvedCount }}/{{ order.people_needed || 1 }}人</text>
-        </view>
-
-        <view class="applicants-list">
+      <!-- Tab 切换（仅进行中状态显示且有接单人） -->
+      <view v-if="showTrackingTab" class="tab-container">
+        <view class="tab-bar">
           <view
-            v-for="applicant in applicantsList"
-            :key="applicant.actor_id"
-            class="applicant-item"
+            class="tab-item"
+            :class="{ active: currentTab === 0 }"
+            @tap="switchTab(0)"
           >
-            <view class="applicant-info" @tap="viewApplicantProfile(applicant)">
-              <image class="applicant-avatar" :src="getActorAvatar(applicant.actor_info)" mode="aspectFill"></image>
-              <view class="applicant-detail">
-                <view class="applicant-name-row">
-                  <text class="applicant-name">{{ applicant.actor_info.nickname || '演员' }}</text>
-                  <view v-if="applicant.actor_info.is_realname_auth" class="verified-tag">
-                    <uni-icons type="auth" size="12" color="#4CAF50"></uni-icons>
-                    <text>已认证</text>
+            <text>订单详情</text>
+          </view>
+          <view
+            class="tab-item"
+            :class="{ active: currentTab === 1 }"
+            @tap="switchTab(1)"
+          >
+            <text>履约追踪</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- Tab 内容区域 -->
+      <swiper
+        v-if="showTrackingTab"
+        class="tab-content-swiper"
+        :current="currentTab"
+        @change="onSwiperChange"
+        :duration="200"
+      >
+        <!-- 订单详情 Tab -->
+        <swiper-item>
+          <scroll-view scroll-y class="tab-scroll-view">
+            <view class="detail-content">
+              <!-- 订单信息卡片 -->
+              <view class="info-card">
+                <view class="card-title">
+                  <uni-icons type="info" size="20" color="#FFD700"></uni-icons>
+                  <text>订单信息</text>
+                </view>
+
+                <view class="info-row">
+                  <text class="info-label">订单编号</text>
+                  <text class="info-value mono">{{ order._id }}</text>
+                </view>
+
+                <view class="info-row">
+                  <text class="info-label">创建时间</text>
+                  <text class="info-value">{{ formatDateTime(order.create_time) }}</text>
+                </view>
+
+                <view class="info-row">
+                  <text class="info-label">订单类型</text>
+                  <view class="order-type-tag" :class="order.order_type === 1 ? 'instant' : 'scheduled'">
+                    {{ order.order_type === 1 ? '即时单' : '预约单' }}
                   </view>
                 </view>
-                <view class="applicant-meta">
-                  <text v-if="applicant.actor_info.gender_text">{{ applicant.actor_info.gender_text }}</text>
-                  <text v-if="applicant.actor_info.height"> | {{ applicant.actor_info.height }}cm</text>
+
+                <view class="info-row">
+                  <text class="info-label">需求人数</text>
+                  <text class="info-value highlight">{{ order.people_needed || 1 }}人</text>
                 </view>
-                <text class="applicant-desc" v-if="applicant.actor_info.description">{{ applicant.actor_info.description }}</text>
+
+                <view class="info-row">
+                  <text class="info-label">报酬金额</text>
+                  <text class="info-value price">{{ formatPrice(order.price_amount) }}/{{ order.price_unit === 'day' ? '天' : '时' }}</text>
+                </view>
               </view>
-              <view class="applicant-credit" :class="(applicant.actor_info.credit_score || 100) >= 130 ? 'credit-gold' : ((applicant.actor_info.credit_score || 100) >= 110 ? 'credit-silver' : 'credit-normal')">
-                {{ applicant.actor_info.credit_score || 100 }}
+
+              <!-- 工作信息卡片 -->
+              <view class="info-card">
+                <view class="card-title">
+                  <uni-icons type="location" size="20" color="#FFD700"></uni-icons>
+                  <text>工作信息</text>
+                </view>
+
+                <view class="info-row">
+                  <text class="info-label">集合地点</text>
+                  <text class="info-value">{{ order.meeting_location_name }}</text>
+                </view>
+
+                <view class="info-row" v-if="order.work_start_time">
+                  <text class="info-label">工作时间</text>
+                  <text class="info-value">{{ formatDateTime(order.work_start_time) }}</text>
+                </view>
+
+                <view class="info-row" v-if="order.role_description">
+                  <text class="info-label">角色描述</text>
+                  <text class="info-value desc">{{ order.role_description }}</text>
+                </view>
+              </view>
+
+              <!-- 演员要求卡片 -->
+              <view class="info-card">
+                <view class="card-title">
+                  <uni-icons type="person" size="20" color="#FFD700"></uni-icons>
+                  <text>演员要求</text>
+                </view>
+
+                <view class="info-row" v-if="order.gender_requirement">
+                  <text class="info-label">性别</text>
+                  <text class="info-value">{{ getGenderText(order.gender_requirement) }}</text>
+                </view>
+
+                <view class="info-row" v-if="order.height_min || order.height_max">
+                  <text class="info-label">身高</text>
+                  <text class="info-value">{{ order.height_min || '不限' }}cm - {{ order.height_max || '不限' }}cm</text>
+                </view>
+
+                <view class="info-row" v-if="order.body_type">
+                  <text class="info-label">体型</text>
+                  <text class="info-value">{{ order.body_type }}</text>
+                </view>
+
+                <view class="info-row" v-if="order.skill_requirements && order.skill_requirements.length">
+                  <text class="info-label">特长要求</text>
+                  <view class="skill-tags">
+                    <text v-for="skill in order.skill_requirements" :key="skill" class="skill-tag">{{ getSkillLabel(skill) }}</text>
+                  </view>
+                </view>
+              </view>
+
+              <!-- 福利待遇卡片 -->
+              <view class="info-card" v-if="order.welfare_tags && order.welfare_tags.length">
+                <view class="card-title">
+                  <uni-icons type="gift" size="20" color="#FFD700"></uni-icons>
+                  <text>福利待遇</text>
+                </view>
+
+                <view class="welfare-tags">
+                  <text v-for="tag in order.welfare_tags" :key="tag" class="welfare-tag">{{ getWelfareLabel(tag) }}</text>
+                </view>
+              </view>
+
+              <!-- 申请者列表（待接单/进行中状态显示，便于多人单继续审核） -->
+              <view class="info-card" v-if="order.order_status <= 1 && applicantsList.length > 0">
+                <view class="card-title">
+                  <uni-icons type="person-filled" size="20" color="#FFD700"></uni-icons>
+                  <text>申请列表</text>
+                  <text class="applicant-count">{{ approvedCount }}/{{ order.people_needed || 1 }}人</text>
+                </view>
+
+                <view class="applicants-list">
+                  <view
+                    v-for="applicant in applicantsList"
+                    :key="applicant.actor_id"
+                    class="applicant-item"
+                  >
+                    <view class="applicant-info" @tap="viewApplicantProfile(applicant)">
+                      <image class="applicant-avatar" :src="getActorAvatar(applicant.actor_info)" mode="aspectFill"></image>
+                      <view class="applicant-detail">
+                        <view class="applicant-name-row">
+                          <text class="applicant-name">{{ applicant.actor_info.nickname || '演员' }}</text>
+                          <view v-if="applicant.actor_info.is_realname_auth" class="verified-tag">
+                            <uni-icons type="auth" size="12" color="#4CAF50"></uni-icons>
+                            <text>已认证</text>
+                          </view>
+                        </view>
+                        <view class="applicant-meta">
+                          <text v-if="applicant.actor_info.gender_text">{{ applicant.actor_info.gender_text }}</text>
+                          <text v-if="applicant.actor_info.height"> | {{ applicant.actor_info.height }}cm</text>
+                        </view>
+                        <text class="applicant-desc" v-if="applicant.actor_info.description">{{ applicant.actor_info.description }}</text>
+                      </view>
+                      <view class="applicant-credit" :class="(applicant.actor_info.credit_score || 100) >= 130 ? 'credit-gold' : ((applicant.actor_info.credit_score || 100) >= 110 ? 'credit-silver' : 'credit-normal')">
+                        {{ applicant.actor_info.credit_score || 100 }}
+                      </view>
+                    </view>
+
+                    <!-- 申请状态/操作按钮 -->
+                    <view class="applicant-actions">
+                      <template v-if="applicant.status === 'pending'">
+                        <button class="action-btn reject-btn" @tap.stop="rejectApplicant(applicant)">拒绝</button>
+                        <button class="action-btn approve-btn" @tap.stop="approveApplicant(applicant)">通过</button>
+                      </template>
+                      <template v-else-if="applicant.status === 'approved'">
+                        <view class="status-badge approved">
+                          <uni-icons type="checkmarkempty" size="14" color="#4CAF50"></uni-icons>
+                          <text>已通过</text>
+                        </view>
+                      </template>
+                      <template v-else-if="applicant.status === 'rejected'">
+                        <view class="status-badge rejected">
+                          <uni-icons type="close" size="14" color="#999"></uni-icons>
+                          <text>已拒绝</text>
+                        </view>
+                      </template>
+                    </view>
+                  </view>
+                </view>
+              </view>
+
+              <!-- 接单人信息（进行中及之后状态显示） -->
+              <view class="info-card" v-if="order.order_status >= 1 && (order.receivers || []).length > 0">
+                <view class="card-title">
+                  <uni-icons type="person-filled" size="20" color="#FFD700"></uni-icons>
+                  <text>接单演员</text>
+                  <text class="applicant-count">{{ (order.receivers || []).length }}人</text>
+                </view>
+
+                <view class="receivers-list">
+                  <view
+                    v-for="(receiverId, index) in (order.receivers || [])"
+                    :key="receiverId"
+                    class="receiver-item"
+                  >
+                    <view class="receiver-info" :data-id="receiverId" @tap="handleReceiverTap">
+                      <image class="receiver-avatar" :src="getReceiverAvatar(receiverId)" mode="aspectFill"></image>
+                      <view class="receiver-detail">
+                        <text class="receiver-name">{{ getReceiverName(receiverId) }}</text>
+                        <view class="receiver-meta">
+                          <text>{{ getReceiverMeta(receiverId) }}</text>
+                        </view>
+                        <!-- 显示追踪状态 -->
+                        <view class="receiver-tracking-status" v-if="order.actor_tracking && order.actor_tracking[receiverId]">
+                          <text :class="trackingStatusClassMap[receiverId]">{{ getTrackingStatusText(receiverId) }}</text>
+                        </view>
+                      </view>
+                      <view class="credit-badge" :class="(receiversMap[receiverId] ? receiversMap[receiverId].credit_score || 100 : 100) >= 130 ? 'credit-gold' : ((receiversMap[receiverId] ? receiversMap[receiverId].credit_score || 100 : 100) >= 110 ? 'credit-silver' : 'credit-normal')">
+                        {{ receiversMap[receiverId] ? receiversMap[receiverId].credit_score || 100 : 100 }}
+                      </view>
+                    </view>
+                  </view>
+                </view>
+              </view>
+
+              <!-- 问题上报记录（如果有） -->
+              <view class="info-card issue-card" v-if="orderIssues.length > 0">
+                <view class="card-title">
+                  <uni-icons type="info" size="20" color="#FF6B6B"></uni-icons>
+                  <text>问题上报记录</text>
+                </view>
+
+                <view class="issue-list">
+                  <view class="issue-item" v-for="issue in orderIssues" :key="issue._id">
+                    <view class="issue-header">
+                      <view class="issue-type-tag" :class="issue.issue_type">{{ getIssueTypeText(issue.issue_type) }}</view>
+                      <text class="issue-time">{{ formatIssueTime(issue.report_time) }}</text>
+                    </view>
+                    <text class="issue-desc" v-if="issue.issue_description">{{ issue.issue_description }}</text>
+                  </view>
+                </view>
+              </view>
+
+              <!-- 操作按钮 -->
+              <view class="action-buttons">
+                <!-- 待接单状态 -->
+                <template v-if="order.order_status === 0">
+                  <button class="btn-secondary" @tap="editOrder">编辑订单</button>
+                  <button class="btn-danger" @tap="cancelOrder">取消订单</button>
+                </template>
+
+                <!-- 进行中状态 -->
+                <template v-else-if="order.order_status === 1">
+                  <button class="btn-secondary" @tap="contactActor">联系演员</button>
+                </template>
+
+                <!-- 待支付状态 -->
+                <template v-else-if="order.order_status === 2">
+                  <button class="btn-primary" @tap="payOrder">立即支付</button>
+                  <button class="btn-secondary" @tap="contactActor">联系演员</button>
+                </template>
+
+                <!-- 已完成状态 -->
+                <template v-else-if="order.order_status === 3">
+                  <button class="btn-primary" v-if="!order.is_rated" @tap="rateOrder">评价订单</button>
+                  <button class="btn-secondary" @tap="repostOrder">再次发布</button>
+                </template>
               </view>
             </view>
+          </scroll-view>
+        </swiper-item>
 
-            <!-- 申请状态/操作按钮 -->
-            <view class="applicant-actions">
-              <template v-if="applicant.status === 'pending'">
-                <button class="action-btn reject-btn" @tap.stop="rejectApplicant(applicant)">拒绝</button>
-                <button class="action-btn approve-btn" @tap.stop="approveApplicant(applicant)">通过</button>
-              </template>
-              <template v-else-if="applicant.status === 'approved'">
-                <view class="status-badge approved">
-                  <uni-icons type="checkmarkempty" size="14" color="#4CAF50"></uni-icons>
-                  <text>已通过</text>
+        <!-- 履约追踪 Tab -->
+        <swiper-item>
+          <scroll-view scroll-y class="tab-scroll-view">
+            <view class="tracking-content">
+              <!-- 演员选择列表（多个演员时显示） -->
+              <view v-if="receivers.length > 1" class="actor-selector">
+                <view
+                  v-for="(receiverId, index) in receivers"
+                  :key="receiverId"
+                  class="actor-selector-item"
+                  :class="{ active: selectedActorId === receiverId }"
+                  @tap="selectActor(receiverId)"
+                >
+                  <image class="selector-avatar" :src="getReceiverAvatar(receiverId)" mode="aspectFill"></image>
+                  <text class="selector-name">{{ getReceiverName(receiverId) }}</text>
+                  <view class="selector-status" :class="trackingStatusClassMap[receiverId]">
+                    {{ getTrackingStatusText(receiverId) }}
+                  </view>
                 </view>
-              </template>
-              <template v-else-if="applicant.status === 'rejected'">
-                <view class="status-badge rejected">
-                  <uni-icons type="close" size="14" color="#999"></uni-icons>
-                  <text>已拒绝</text>
-                </view>
-              </template>
+              </view>
+
+              <!-- 追踪地图组件 -->
+              <tracking-map
+                v-if="currentTab === 1 && selectedActorId"
+                :order-id="orderId"
+                :actor-id="selectedActorId"
+                @view-profile="onViewActorProfile"
+                @completed="onTrackingCompleted"
+              ></tracking-map>
+            </view>
+          </scroll-view>
+        </swiper-item>
+      </swiper>
+
+      <!-- 无 Tab 时直接显示订单详情 -->
+      <view v-else class="detail-content-full">
+        <!-- 订单信息卡片 -->
+        <view class="info-card">
+          <view class="card-title">
+            <uni-icons type="info" size="20" color="#FFD700"></uni-icons>
+            <text>订单信息</text>
+          </view>
+
+          <view class="info-row">
+            <text class="info-label">订单编号</text>
+            <text class="info-value mono">{{ order._id }}</text>
+          </view>
+
+          <view class="info-row">
+            <text class="info-label">创建时间</text>
+            <text class="info-value">{{ formatDateTime(order.create_time) }}</text>
+          </view>
+
+          <view class="info-row">
+            <text class="info-label">订单类型</text>
+            <view class="order-type-tag" :class="order.order_type === 1 ? 'instant' : 'scheduled'">
+              {{ order.order_type === 1 ? '即时单' : '预约单' }}
+            </view>
+          </view>
+
+          <view class="info-row">
+            <text class="info-label">需求人数</text>
+            <text class="info-value highlight">{{ order.people_needed || 1 }}人</text>
+          </view>
+
+          <view class="info-row">
+            <text class="info-label">报酬金额</text>
+            <text class="info-value price">{{ formatPrice(order.price_amount) }}/{{ order.price_unit === 'day' ? '天' : '时' }}</text>
+          </view>
+        </view>
+
+        <!-- 工作信息卡片 -->
+        <view class="info-card">
+          <view class="card-title">
+            <uni-icons type="location" size="20" color="#FFD700"></uni-icons>
+            <text>工作信息</text>
+          </view>
+
+          <view class="info-row">
+            <text class="info-label">集合地点</text>
+            <text class="info-value">{{ order.meeting_location_name }}</text>
+          </view>
+
+          <view class="info-row" v-if="order.work_start_time">
+            <text class="info-label">工作时间</text>
+            <text class="info-value">{{ formatDateTime(order.work_start_time) }}</text>
+          </view>
+
+          <view class="info-row" v-if="order.role_description">
+            <text class="info-label">角色描述</text>
+            <text class="info-value desc">{{ order.role_description }}</text>
+          </view>
+        </view>
+
+        <!-- 演员要求卡片 -->
+        <view class="info-card">
+          <view class="card-title">
+            <uni-icons type="person" size="20" color="#FFD700"></uni-icons>
+            <text>演员要求</text>
+          </view>
+
+          <view class="info-row" v-if="order.gender_requirement">
+            <text class="info-label">性别</text>
+            <text class="info-value">{{ getGenderText(order.gender_requirement) }}</text>
+          </view>
+
+          <view class="info-row" v-if="order.height_min || order.height_max">
+            <text class="info-label">身高</text>
+            <text class="info-value">{{ order.height_min || '不限' }}cm - {{ order.height_max || '不限' }}cm</text>
+          </view>
+
+          <view class="info-row" v-if="order.body_type">
+            <text class="info-label">体型</text>
+            <text class="info-value">{{ order.body_type }}</text>
+          </view>
+
+          <view class="info-row" v-if="order.skill_requirements && order.skill_requirements.length">
+            <text class="info-label">特长要求</text>
+            <view class="skill-tags">
+              <text v-for="skill in order.skill_requirements" :key="skill" class="skill-tag">{{ getSkillLabel(skill) }}</text>
             </view>
           </view>
         </view>
-      </view>
 
-      <!-- 接单人信息（进行中及之后状态显示） -->
-      <view class="info-card" v-if="order.order_status >= 1 && (order.receivers || []).length > 0">
-        <view class="card-title">
-          <uni-icons type="person-filled" size="20" color="#FFD700"></uni-icons>
-          <text>接单演员</text>
-          <text class="applicant-count">{{ (order.receivers || []).length }}人</text>
+        <!-- 福利待遇卡片 -->
+        <view class="info-card" v-if="order.welfare_tags && order.welfare_tags.length">
+          <view class="card-title">
+            <uni-icons type="gift" size="20" color="#FFD700"></uni-icons>
+            <text>福利待遇</text>
+          </view>
+
+          <view class="welfare-tags">
+            <text v-for="tag in order.welfare_tags" :key="tag" class="welfare-tag">{{ getWelfareLabel(tag) }}</text>
+          </view>
         </view>
 
-        <view class="receivers-list">
-          <view
-            v-for="(receiverId, index) in (order.receivers || [])"
-            :key="receiverId"
-            class="receiver-info"
-            @tap="viewReceiverProfileById(receiverId)"
-          >
-            <image class="receiver-avatar" :src="getReceiverAvatar(receiverId)" mode="aspectFill"></image>
-            <view class="receiver-detail">
-              <text class="receiver-name">{{ getReceiverName(receiverId) }}</text>
-              <view class="receiver-meta">
-                <text>{{ getReceiverMeta(receiverId) }}</text>
+        <!-- 申请者列表（待接单/进行中状态显示，便于多人单继续审核） -->
+        <view class="info-card" v-if="order.order_status <= 1 && applicantsList.length > 0">
+          <view class="card-title">
+            <uni-icons type="person-filled" size="20" color="#FFD700"></uni-icons>
+            <text>申请列表</text>
+            <text class="applicant-count">{{ approvedCount }}/{{ order.people_needed || 1 }}人</text>
+          </view>
+
+          <view class="applicants-list">
+            <view
+              v-for="applicant in applicantsList"
+              :key="applicant.actor_id"
+              class="applicant-item"
+            >
+              <view class="applicant-info" @tap="viewApplicantProfile(applicant)">
+                <image class="applicant-avatar" :src="getActorAvatar(applicant.actor_info)" mode="aspectFill"></image>
+                <view class="applicant-detail">
+                  <view class="applicant-name-row">
+                    <text class="applicant-name">{{ applicant.actor_info.nickname || '演员' }}</text>
+                    <view v-if="applicant.actor_info.is_realname_auth" class="verified-tag">
+                      <uni-icons type="auth" size="12" color="#4CAF50"></uni-icons>
+                      <text>已认证</text>
+                    </view>
+                  </view>
+                  <view class="applicant-meta">
+                    <text v-if="applicant.actor_info.gender_text">{{ applicant.actor_info.gender_text }}</text>
+                    <text v-if="applicant.actor_info.height"> | {{ applicant.actor_info.height }}cm</text>
+                  </view>
+                  <text class="applicant-desc" v-if="applicant.actor_info.description">{{ applicant.actor_info.description }}</text>
+                </view>
+                <view class="applicant-credit" :class="(applicant.actor_info.credit_score || 100) >= 130 ? 'credit-gold' : ((applicant.actor_info.credit_score || 100) >= 110 ? 'credit-silver' : 'credit-normal')">
+                  {{ applicant.actor_info.credit_score || 100 }}
+                </view>
+              </view>
+
+              <!-- 申请状态/操作按钮 -->
+              <view class="applicant-actions">
+                <template v-if="applicant.status === 'pending'">
+                  <button class="action-btn reject-btn" @tap.stop="rejectApplicant(applicant)">拒绝</button>
+                  <button class="action-btn approve-btn" @tap.stop="approveApplicant(applicant)">通过</button>
+                </template>
+                <template v-else-if="applicant.status === 'approved'">
+                  <view class="status-badge approved">
+                    <uni-icons type="checkmarkempty" size="14" color="#4CAF50"></uni-icons>
+                    <text>已通过</text>
+                  </view>
+                </template>
+                <template v-else-if="applicant.status === 'rejected'">
+                  <view class="status-badge rejected">
+                    <uni-icons type="close" size="14" color="#999"></uni-icons>
+                    <text>已拒绝</text>
+                  </view>
+                </template>
               </view>
             </view>
-            <view class="credit-badge" :class="(receiversMap[receiverId] ? receiversMap[receiverId].credit_score || 100 : 100) >= 130 ? 'credit-gold' : ((receiversMap[receiverId] ? receiversMap[receiverId].credit_score || 100 : 100) >= 110 ? 'credit-silver' : 'credit-normal')">
-              {{ receiversMap[receiverId] ? receiversMap[receiverId].credit_score || 100 : 100 }}
+          </view>
+        </view>
+
+        <!-- 接单人信息（进行中及之后状态显示） -->
+        <view class="info-card" v-if="order.order_status >= 1 && (order.receivers || []).length > 0">
+          <view class="card-title">
+            <uni-icons type="person-filled" size="20" color="#FFD700"></uni-icons>
+            <text>接单演员</text>
+            <text class="applicant-count">{{ (order.receivers || []).length }}人</text>
+          </view>
+
+          <view class="receivers-list">
+            <view
+              v-for="(receiverId, index) in (order.receivers || [])"
+              :key="receiverId"
+              class="receiver-item"
+            >
+              <view class="receiver-info" :data-id="receiverId" @tap="handleReceiverTap">
+                <image class="receiver-avatar" :src="getReceiverAvatar(receiverId)" mode="aspectFill"></image>
+                <view class="receiver-detail">
+                  <text class="receiver-name">{{ getReceiverName(receiverId) }}</text>
+                  <view class="receiver-meta">
+                    <text>{{ getReceiverMeta(receiverId) }}</text>
+                  </view>
+                  <!-- 显示追踪状态 -->
+                  <view class="receiver-tracking-status" v-if="order.actor_tracking && order.actor_tracking[receiverId]">
+                    <text :class="trackingStatusClassMap[receiverId]">{{ getTrackingStatusText(receiverId) }}</text>
+                  </view>
+                </view>
+                <view class="credit-badge" :class="(receiversMap[receiverId] ? receiversMap[receiverId].credit_score || 100 : 100) >= 130 ? 'credit-gold' : ((receiversMap[receiverId] ? receiversMap[receiverId].credit_score || 100 : 100) >= 110 ? 'credit-silver' : 'credit-normal')">
+                  {{ receiversMap[receiverId] ? receiversMap[receiverId].credit_score || 100 : 100 }}
+                </view>
+              </view>
+              <!-- 查看追踪按钮（仅进行中状态显示） -->
+              <view class="receiver-actions" v-if="order.order_status === 1">
+                <button class="track-btn" :data-id="receiverId" @tap.stop="handleTrackingTap">
+                  <uni-icons type="location" size="16" color="#FFD700"></uni-icons>
+                  <text>查看追踪</text>
+                </button>
+              </view>
             </view>
           </view>
         </view>
-      </view>
 
-      <!-- 问题上报记录（如果有） -->
-      <view class="info-card issue-card" v-if="orderIssues.length > 0">
-        <view class="card-title">
-          <uni-icons type="info" size="20" color="#FF6B6B"></uni-icons>
-          <text>问题上报记录</text>
-        </view>
+        <!-- 问题上报记录（如果有） -->
+        <view class="info-card issue-card" v-if="orderIssues.length > 0">
+          <view class="card-title">
+            <uni-icons type="info" size="20" color="#FF6B6B"></uni-icons>
+            <text>问题上报记录</text>
+          </view>
 
-        <view class="issue-list">
-          <view class="issue-item" v-for="issue in orderIssues" :key="issue._id">
-            <view class="issue-header">
-              <view class="issue-type-tag" :class="issue.issue_type">{{ getIssueTypeText(issue.issue_type) }}</view>
-              <text class="issue-time">{{ formatIssueTime(issue.report_time) }}</text>
+          <view class="issue-list">
+            <view class="issue-item" v-for="issue in orderIssues" :key="issue._id">
+              <view class="issue-header">
+                <view class="issue-type-tag" :class="issue.issue_type">{{ getIssueTypeText(issue.issue_type) }}</view>
+                <text class="issue-time">{{ formatIssueTime(issue.report_time) }}</text>
+              </view>
+              <text class="issue-desc" v-if="issue.issue_description">{{ issue.issue_description }}</text>
             </view>
-            <text class="issue-desc" v-if="issue.issue_description">{{ issue.issue_description }}</text>
           </view>
         </view>
-      </view>
 
-      <!-- 操作按钮 -->
-      <view class="action-buttons">
-        <!-- 待接单状态 -->
-        <template v-if="order.order_status === 0">
-          <button class="btn-secondary" @tap="editOrder">编辑订单</button>
-          <button class="btn-danger" @tap="cancelOrder">取消订单</button>
-        </template>
+        <!-- 操作按钮 -->
+        <view class="action-buttons">
+          <!-- 待接单状态 -->
+          <template v-if="order.order_status === 0">
+            <button class="btn-secondary" @tap="editOrder">编辑订单</button>
+            <button class="btn-danger" @tap="cancelOrder">取消订单</button>
+          </template>
 
-        <!-- 进行中状态 -->
-        <template v-else-if="order.order_status === 1">
-          <button class="btn-primary" @tap="goToTracking">查看追踪</button>
-          <button class="btn-secondary" @tap="contactActor">联系演员</button>
-        </template>
+          <!-- 进行中状态 -->
+          <template v-else-if="order.order_status === 1">
+            <button class="btn-primary" @tap="goToTracking">查看追踪</button>
+            <button class="btn-secondary" @tap="contactActor">联系演员</button>
+          </template>
 
-        <!-- 待支付状态 -->
-        <template v-else-if="order.order_status === 2">
-          <button class="btn-primary" @tap="payOrder">立即支付</button>
-          <button class="btn-secondary" @tap="contactActor">联系演员</button>
-        </template>
+          <!-- 待支付状态 -->
+          <template v-else-if="order.order_status === 2">
+            <button class="btn-primary" @tap="payOrder">立即支付</button>
+            <button class="btn-secondary" @tap="contactActor">联系演员</button>
+          </template>
 
-        <!-- 已完成状态 -->
-        <template v-else-if="order.order_status === 3">
-          <button class="btn-primary" v-if="!order.is_rated" @tap="rateOrder">评价订单</button>
-          <button class="btn-secondary" @tap="repostOrder">再次发布</button>
-        </template>
+          <!-- 已完成状态 -->
+          <template v-else-if="order.order_status === 3">
+            <button class="btn-primary" v-if="!order.is_rated" @tap="rateOrder">评价订单</button>
+            <button class="btn-secondary" @tap="repostOrder">再次发布</button>
+          </template>
+        </view>
       </view>
     </view>
 
@@ -306,7 +626,12 @@
 </template>
 
 <script>
+import TrackingMap from '@/components/tracking-map/tracking-map.vue'
+
 export default {
+  components: {
+    TrackingMap
+  },
   data() {
     return {
       orderId: '',
@@ -315,6 +640,8 @@ export default {
       applicantsList: [],
       receiversMap: {},
       loading: true,
+      currentTab: 0,
+      selectedActorId: '',
       loadingText: {
         contentdown: '加载中...',
         contentrefresh: '加载中...',
@@ -369,12 +696,41 @@ export default {
     },
     approvedCount() {
       return this.applicantsList.filter(a => a.status === 'approved').length
+    },
+    receivers() {
+      return this.order && this.order.receivers ? this.order.receivers : []
+    },
+    showTrackingTab() {
+      return this.order && this.order.order_status === 1 && this.receivers.length > 0
+    },
+    trackingStatusClassMap() {
+      const map = {}
+      if (!this.order || !this.order.receivers) return map
+      this.order.receivers.forEach(receiverId => {
+        const tracking = this.order.actor_tracking && this.order.actor_tracking[receiverId]
+        if (!tracking) {
+          map[receiverId] = 'status-pending'
+        } else if (tracking.is_completed) {
+          map[receiverId] = 'status-completed'
+        } else if (tracking.arrive_time) {
+          map[receiverId] = 'status-arrived'
+        } else if (tracking.tracking_started) {
+          map[receiverId] = 'status-started'
+        } else {
+          map[receiverId] = 'status-pending'
+        }
+      })
+      return map
     }
   },
 
   onLoad(options) {
     if (options.id) {
       this.orderId = options.id
+      // 如果带有 tracking 参数，默认切换到追踪 Tab
+      if (options.tracking === 'true') {
+        this.currentTab = 1
+      }
       this.loadOrderDetail()
     } else {
       this.loading = false
@@ -389,6 +745,30 @@ export default {
   },
 
   methods: {
+    switchTab(index) {
+      this.currentTab = index
+    },
+
+    onSwiperChange(e) {
+      this.currentTab = e.detail.current
+    },
+
+    selectActor(actorId) {
+      this.selectedActorId = actorId
+    },
+
+    onViewActorProfile(data) {
+      uni.navigateTo({
+        url: `/pages/crew/actor_detail?id=${data.actorId}`
+      })
+    },
+
+    onTrackingCompleted(data) {
+      console.log('追踪完成:', data)
+      // 刷新订单详情
+      this.loadOrderDetail()
+    },
+
     async loadOrderDetail() {
       try {
         this.loading = true
@@ -398,16 +778,21 @@ export default {
         if (res.result.data && res.result.data.length > 0) {
           this.order = res.result.data[0]
 
-          // 如果有申请者，加载申请者列表
-          if (this.order.order_status === 0) {
+          // 如果有申请者，待接单或进行中都要加载，便于多人单继续审核
+          if (this.order.order_status <= 1) {
             await this.loadApplicants()
           }
 
           // 如果有接单人，加载接单人信息
           if (this.order.receivers && this.order.receivers.length > 0) {
             await this.loadReceiversInfo(this.order.receivers)
+            // 默认选中第一个演员
+            if (!this.selectedActorId) {
+              this.selectedActorId = this.order.receivers[0]
+            }
           } else if (this.order.receiver_id) {
             await this.loadReceiverInfo(this.order.receiver_id)
+            this.selectedActorId = this.order.receiver_id
           }
 
           // 加载问题上报记录
@@ -750,15 +1135,9 @@ export default {
 
     // 查看申请者详情
     viewApplicantProfile(applicant) {
-      // TODO: 弹窗或跳转显示演员详细信息
-      const info = applicant.actor_info
-      const skills = (info.skills || []).map(s => this.skillMap[s] || s).join('、') || '无'
-
-      uni.showModal({
-        title: info.nickname || '演员详情',
-        content: `性别: ${info.gender_text || '未设置'}\n身高: ${info.height || '未设置'}cm\n信用分: ${info.credit_score || 100}\n实名: ${info.is_realname_auth ? '已认证' : '未认证'}\n\n简介: ${info.description || '暂无'}\n\n特长: ${skills}`,
-        showCancel: false,
-        confirmText: '关闭'
+      const actorId = applicant.actor_id
+      uni.navigateTo({
+        url: `/pages/crew/actor_detail?id=${actorId}`
       })
     },
 
@@ -896,17 +1275,54 @@ export default {
       return 'credit-normal'
     },
 
+    // 处理接单人点击事件
+    handleReceiverTap(e) {
+      const receiverId = e.currentTarget.dataset.id
+      if (receiverId) {
+        this.viewReceiverProfileById(receiverId)
+      }
+    },
+
+    // 处理追踪按钮点击事件
+    handleTrackingTap(e) {
+      const receiverId = e.currentTarget.dataset.id
+      if (receiverId) {
+        this.viewActorTracking(receiverId)
+      }
+    },
+
     // 查看接单人详情
     viewReceiverProfileById(receiverId) {
-      const receiver = this.receiversMap[receiverId]
-      if (receiver) {
-        uni.showModal({
-          title: receiver.nickname || '演员',
-          content: `性别: ${receiver.gender === 1 ? '男' : (receiver.gender === 2 ? '女' : '未设置')}\n身高: ${receiver.height || '未设置'}cm\n信用分: ${receiver.credit_score || 100}`,
-          showCancel: false,
-          confirmText: '关闭'
-        })
-      }
+      uni.navigateTo({
+        url: `/pages/crew/actor_detail?id=${receiverId}`
+      })
+    },
+
+    // 查看演员追踪
+    viewActorTracking(receiverId) {
+      uni.navigateTo({
+        url: `/pages/crew/actor_detail?id=${receiverId}&orderId=${this.orderId}`
+      })
+    },
+
+    // 获取追踪状态文本
+    getTrackingStatusText(receiverId) {
+      const tracking = this.order.actor_tracking && this.order.actor_tracking[receiverId]
+      if (!tracking) return '待出发'
+      if (tracking.is_completed) return '已完成'
+      if (tracking.arrive_time) return '已打卡'
+      if (tracking.tracking_started) return '已出发'
+      return '待出发'
+    },
+
+    // 获取追踪状态样式
+    getTrackingStatusClass(receiverId) {
+      const tracking = this.order.actor_tracking && this.order.actor_tracking[receiverId]
+      if (!tracking) return 'status-pending'
+      if (tracking.is_completed) return 'status-completed'
+      if (tracking.arrive_time) return 'status-arrived'
+      if (tracking.tracking_started) return 'status-started'
+      return 'status-pending'
     },
 
     goBack() {
@@ -922,7 +1338,8 @@ export default {
 .order-detail-page {
   min-height: 100vh;
   background-color: $bg-primary;
-  padding-bottom: env(safe-area-inset-bottom);
+  display: flex;
+  flex-direction: column;
 }
 
 .loading-container {
@@ -931,7 +1348,11 @@ export default {
 }
 
 .order-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   padding: $spacing-base;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 // 状态卡片
@@ -985,6 +1406,131 @@ export default {
     .status-desc {
       font-size: $font-size-sm;
       color: $text-secondary;
+    }
+  }
+}
+
+// Tab 切换
+.tab-container {
+  margin-bottom: $spacing-base;
+}
+
+.tab-bar {
+  display: flex;
+  background-color: $bg-secondary;
+  border-radius: $border-radius-base;
+  padding: 8rpx;
+}
+
+.tab-item {
+  flex: 1;
+  height: 72rpx;
+  @include flex-center;
+  border-radius: $border-radius-sm;
+  transition: all 0.2s;
+
+  text {
+    font-size: $font-size-base;
+    color: $text-secondary;
+    font-weight: $font-weight-medium;
+  }
+
+  &.active {
+    background: linear-gradient(135deg, $primary-color 0%, #FFED4E 100%);
+
+    text {
+      color: $black;
+      font-weight: $font-weight-bold;
+    }
+  }
+}
+
+// Tab 内容
+.tab-content-swiper {
+  flex: 1;
+  height: calc(100vh - 320rpx);
+}
+
+.tab-scroll-view {
+  height: 100%;
+}
+
+.detail-content,
+.detail-content-full {
+  padding-bottom: $spacing-lg;
+}
+
+.tracking-content {
+  padding-bottom: $spacing-lg;
+}
+
+// 演员选择器
+.actor-selector {
+  display: flex;
+  gap: $spacing-sm;
+  margin-bottom: $spacing-base;
+  overflow-x: auto;
+  padding-bottom: $spacing-xs;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.actor-selector-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+  padding: $spacing-sm;
+  background-color: $bg-secondary;
+  border-radius: $border-radius-base;
+  min-width: 140rpx;
+  border: 2rpx solid transparent;
+  transition: all 0.2s;
+
+  &.active {
+    border-color: $primary-color;
+    background-color: rgba($primary-color, 0.1);
+  }
+
+  .selector-avatar {
+    width: 80rpx;
+    height: 80rpx;
+    border-radius: 50%;
+    background-color: $gray-4;
+  }
+
+  .selector-name {
+    font-size: $font-size-sm;
+    color: $text-primary;
+    @include text-ellipsis;
+    max-width: 120rpx;
+  }
+
+  .selector-status {
+    font-size: $font-size-xs;
+    padding: 2rpx 8rpx;
+    border-radius: 4rpx;
+
+    &.status-pending {
+      background-color: rgba($text-hint, 0.2);
+      color: $text-hint;
+    }
+
+    &.status-started {
+      background-color: rgba(#2979FF, 0.2);
+      color: #2979FF;
+    }
+
+    &.status-arrived {
+      background-color: rgba(#FF9800, 0.2);
+      color: #FF9800;
+    }
+
+    &.status-completed {
+      background-color: rgba($success-color, 0.2);
+      color: $success-color;
     }
   }
 }
@@ -1525,5 +2071,73 @@ export default {
   display: flex;
   flex-direction: column;
   gap: $spacing-sm;
+}
+
+.receiver-item {
+  background-color: $bg-tertiary;
+  border-radius: $border-radius-base;
+  padding: $spacing-base;
+}
+
+.receiver-tracking-status {
+  margin-top: 4rpx;
+
+  text {
+    font-size: $font-size-xs;
+    padding: 2rpx 8rpx;
+    border-radius: 4rpx;
+
+    &.status-pending {
+      background-color: rgba($text-hint, 0.2);
+      color: $text-hint;
+    }
+
+    &.status-started {
+      background-color: rgba(#2979FF, 0.2);
+      color: #2979FF;
+    }
+
+    &.status-arrived {
+      background-color: rgba(#FF9800, 0.2);
+      color: #FF9800;
+    }
+
+    &.status-completed {
+      background-color: rgba($success-color, 0.2);
+      color: $success-color;
+    }
+  }
+}
+
+.receiver-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: $spacing-sm;
+  padding-top: $spacing-sm;
+  border-top: 1rpx solid rgba(255, 255, 255, 0.08);
+}
+
+.track-btn {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 12rpx 24rpx;
+  background: linear-gradient(135deg, rgba($primary-color, 0.2) 0%, rgba($primary-color, 0.1) 100%);
+  border: 1rpx solid $primary-color;
+  border-radius: $border-radius-base;
+  font-size: $font-size-sm;
+
+  text {
+    color: $primary-color;
+    font-weight: $font-weight-medium;
+  }
+
+  &::after {
+    border: none;
+  }
+
+  &:active {
+    opacity: 0.8;
+  }
 }
 </style>
