@@ -546,7 +546,7 @@ export default {
 
     goToSettings() {
       uni.navigateTo({
-        url: '/uni_modules/uni-id-pages/pages/userinfo/userinfo?showLoginManage=true'
+        url: '/pages/settings/index'
       })
     },
 

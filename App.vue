@@ -1,8 +1,10 @@
 <script>
 	import uniIdPageInit from '@/uni_modules/uni-id-pages/init.js';
+	import { initTheme } from '@/common/theme.js';
 	export default {
 		onLaunch: async function() {
 			console.log('App Launch')
+			initTheme()
 			await uniIdPageInit()
 		},
 		onShow: function() {

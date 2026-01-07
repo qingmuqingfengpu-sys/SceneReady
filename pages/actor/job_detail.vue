@@ -187,7 +187,7 @@
     </view>
 
     <!-- 抢单确认弹窗 -->
-    <uni-popup ref="grabPopup" type="dialog">
+    <uni-popup ref="grabPopup" type="dialog" v-if="job">
       <view class="grab-popup">
         <view class="popup-header">
           <text class="popup-title">确认抢单</text>

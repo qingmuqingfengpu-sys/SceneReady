@@ -3226,5 +3226,268 @@ module.exports = {
         message: error.message || '系统错误'
       }
     }
+  },
+
+  /**
+   * 通知剧组问题 - 演员端
+   * 用于演员向剧组发送迟到预警、其他问题等通知
+   * @param {String} orderId 订单ID
+   * @param {Object} data 通知数据
+   * @param {String} data.message 通知消息
+   * @param {String} data.issue_type 问题类型: late_warning | other
+   * @param {Object} data.actor_location 演员当前位置
+   * @returns {Object} 操作结果
+   */
+  async notifyCrewIssue(orderId, data) {
+    try {
+      const userId = this.authInfo && this.authInfo.uid
+
+      if (!userId) {
+        return { code: 401, message: '请先登录' }
+      }
+
+      if (!orderId) {
+        return { code: 400, message: '订单ID不能为空' }
+      }
+
+      if (!data || !data.message) {
+        return { code: 400, message: '通知消息不能为空' }
+      }
+
+      // 查询订单
+      const orderRes = await db.collection('orders')
+        .doc(orderId)
+        .get()
+
+      const order = Array.isArray(orderRes.data) ? orderRes.data[0] : orderRes.data
+      if (!order) {
+        return { code: 404, message: '订单不存在' }
+      }
+
+      // 检查用户是否是该订单的接单者
+      const receivers = order.receivers || []
+      const isInApplicants = (order.applicants || []).some(a => a.actor_id === userId && a.status === 'approved')
+
+      if (!receivers.includes(userId) && !isInApplicants) {
+        return { code: 403, message: '您不是此订单的接单者' }
+      }
+
+      const now = Date.now()
+
+      // 获取演员信息
+      const actorRes = await db.collection('uni-id-users')
+        .doc(userId)
+        .field({ nickname: true, avatar: true, mobile: true })
+        .get()
+
+      const actor = Array.isArray(actorRes.data) ? actorRes.data[0] : actorRes.data
+      const actorName = actor ? actor.nickname : '演员'
+
+      // 创建问题记录
+      const issueRecord = {
+        order_id: orderId,
+        actor_id: userId,
+        actor_name: actorName,
+        issue_type: data.issue_type || 'other',
+        issue_description: data.message,
+        report_time: now,
+        location: data.actor_location || null,
+        status: 'pending', // pending | read | resolved
+        create_time: now
+      }
+
+      // 保存到问题记录表
+      await db.collection('order_issues').add(issueRecord)
+
+      // 更新订单的问题标记
+      const updateData = {
+        has_issues: true,
+        last_issue_time: now,
+        update_time: now
+      }
+
+      // 如果是迟到预警，记录到actor_tracking
+      if (data.issue_type === 'late_warning') {
+        const actorTracking = order.actor_tracking || {}
+        if (actorTracking[userId]) {
+          actorTracking[userId].late_warning_time = now
+          actorTracking[userId].late_warning_sent = true
+          updateData.actor_tracking = actorTracking
+        }
+      }
+
+      await db.collection('orders')
+        .doc(orderId)
+        .update(updateData)
+
+      // TODO: 发送推送通知给剧组
+      // 可以通过uni-push或其他推送服务实现
+      // const publisherId = order.publisher_id
+      // await sendPushNotification(publisherId, {
+      //   title: '订单问题通知',
+      //   content: data.message
+      // })
+
+      return {
+        code: 0,
+        message: '已通知剧组',
+        data: {
+          issue_id: issueRecord._id,
+          notify_time: now
+        }
+      }
+
+    } catch (error) {
+      console.error('通知剧组失败:', error)
+      return {
+        code: 500,
+        message: error.message || '系统错误'
+      }
+    }
+  },
+
+  /**
+   * 从订单中移除演员 - 剧组端
+   * 用于剧组在演员迟到超时后取消其接单资格
+   * @param {String} orderId 订单ID
+   * @param {String} actorId 演员ID
+   * @param {String} reason 取消原因: late_cancellation | crew_cancel | other
+   * @returns {Object} 操作结果
+   */
+  async removeActorFromOrder(orderId, actorId, reason = 'late_cancellation') {
+    try {
+      const userId = this.authInfo && this.authInfo.uid
+
+      if (!userId) {
+        return { code: 401, message: '请先登录' }
+      }
+
+      if (!orderId || !actorId) {
+        return { code: 400, message: '参数不完整' }
+      }
+
+      // 查询订单
+      const orderRes = await db.collection('orders')
+        .doc(orderId)
+        .get()
+
+      const order = Array.isArray(orderRes.data) ? orderRes.data[0] : orderRes.data
+      if (!order) {
+        return { code: 404, message: '订单不存在' }
+      }
+
+      // 权限检查(必须是发布者)
+      if (order.publisher_id !== userId) {
+        return { code: 403, message: '仅剧组方可以移除演员' }
+      }
+
+      // 状态检查(必须是进行中)
+      if (order.order_status !== 1) {
+        return { code: 400, message: '当前订单状态不允许移除演员' }
+      }
+
+      // 检查演员是否在接单者列表中
+      const receivers = order.receivers || []
+      if (!receivers.includes(actorId)) {
+        return { code: 400, message: '该演员不是此订单的接单者' }
+      }
+
+      // 检查演员是否已打卡（已打卡的不能移除）
+      const actorTracking = order.actor_tracking || {}
+      const tracking = actorTracking[actorId]
+      if (tracking && tracking.arrive_time) {
+        return { code: 400, message: '该演员已打卡，无法移除' }
+      }
+
+      const now = Date.now()
+
+      // 从receivers中移除该演员
+      const newReceivers = receivers.filter(id => id !== actorId)
+
+      // 从actor_tracking中移除该演员
+      delete actorTracking[actorId]
+
+      // 更新申请者状态为cancelled
+      const applicants = order.applicants || []
+      const updatedApplicants = applicants.map(a => {
+        if (a.actor_id === actorId) {
+          return {
+            ...a,
+            status: 'cancelled',
+            cancel_reason: reason,
+            cancel_time: now
+          }
+        }
+        return a
+      })
+
+      // 构建更新数据
+      const updateData = {
+        receivers: newReceivers,
+        actor_tracking: actorTracking,
+        applicants: updatedApplicants,
+        update_time: now
+      }
+
+      // 如果没有接单者了，将订单状态改回待接单
+      if (newReceivers.length === 0) {
+        updateData.order_status = 0 // 待接单
+        updateData.receiver_id = null
+      }
+
+      await db.collection('orders')
+        .doc(orderId)
+        .update(updateData)
+
+      // 记录取消日志
+      await db.collection('order_issues').add({
+        order_id: orderId,
+        actor_id: actorId,
+        issue_type: 'actor_removed',
+        issue_description: '演员被移除: ' + reason,
+        report_time: now,
+        operator_id: userId,
+        operator_type: 'crew',
+        status: 'resolved',
+        create_time: now
+      })
+
+      // 扣除演员信用分（迟到取消扣5分）
+      if (reason === 'late_cancellation') {
+        await db.collection('uni-id-users')
+          .doc(actorId)
+          .update({
+            credit_score_actor: dbCmd.inc(-5)
+          })
+      }
+
+      // 获取演员信息用于返回
+      const actorRes = await db.collection('uni-id-users')
+        .doc(actorId)
+        .field({ nickname: true })
+        .get()
+
+      const actor = Array.isArray(actorRes.data) ? actorRes.data[0] : actorRes.data
+      const actorName = actor ? actor.nickname : '演员'
+
+      return {
+        code: 0,
+        message: '已移除演员【' + actorName + '】',
+        data: {
+          actor_id: actorId,
+          actor_name: actorName,
+          remaining_receivers: newReceivers.length,
+          order_status: newReceivers.length === 0 ? 0 : 1,
+          credit_deducted: reason === 'late_cancellation' ? 5 : 0
+        }
+      }
+
+    } catch (error) {
+      console.error('移除演员失败:', error)
+      return {
+        code: 500,
+        message: error.message || '系统错误'
+      }
+    }
   }
 }

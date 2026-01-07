@@ -238,6 +238,17 @@
                         {{ receiversMap[receiverId] ? receiversMap[receiverId].credit_score || 100 : 100 }}
                       </view>
                     </view>
+                    <!-- Task 4: 取消资格按钮（超时10分钟且未打卡） -->
+                    <view class="receiver-actions" v-if="order.order_status === 1 && canCancelActor(receiverId)">
+                      <button
+                        class="cancel-actor-btn"
+                        :data-id="receiverId"
+                        @tap.stop="handleCancelActorTap"
+                      >
+                        <uni-icons type="close" size="16" color="#F44336"></uni-icons>
+                        <text>取消资格</text>
+                      </button>
+                    </view>
                   </view>
                 </view>
               </view>
@@ -519,6 +530,16 @@
                   <uni-icons type="location" size="16" color="#FFD700"></uni-icons>
                   <text>查看追踪</text>
                 </button>
+                <!-- Task 4: 取消资格按钮（超时10分钟且未打卡） -->
+                <button
+                  v-if="canCancelActor(receiverId)"
+                  class="cancel-actor-btn"
+                  :data-id="receiverId"
+                  @tap.stop="handleCancelActorTap"
+                >
+                  <uni-icons type="close" size="16" color="#F44336"></uni-icons>
+                  <text>取消资格</text>
+                </button>
               </view>
             </view>
           </view>
@@ -703,20 +724,34 @@ export default {
     showTrackingTab() {
       return this.order && this.order.order_status === 1 && this.receivers.length > 0
     },
+    // Task 2: 更新状态样式映射，增加"已迟到"状态
     trackingStatusClassMap() {
       const map = {}
       if (!this.order || !this.order.receivers) return map
+      const gatherTime = this.order.work_start_time || this.order.gather_time
+      const now = Date.now()
+
       this.order.receivers.forEach(receiverId => {
         const tracking = this.order.actor_tracking && this.order.actor_tracking[receiverId]
-        if (!tracking) {
-          map[receiverId] = 'status-pending'
-        } else if (tracking.is_completed) {
+
+        // 优先级1: 已完成
+        if (tracking && tracking.is_completed) {
           map[receiverId] = 'status-completed'
-        } else if (tracking.arrive_time) {
+        }
+        // 优先级2: 已打卡
+        else if (tracking && tracking.arrive_time) {
           map[receiverId] = 'status-arrived'
-        } else if (tracking.tracking_started) {
+        }
+        // 优先级3: 已迟到（未打卡且超过集合时间）
+        else if (gatherTime && now > gatherTime && (!tracking || !tracking.arrive_time)) {
+          map[receiverId] = 'status-late'
+        }
+        // 优先级4: 已出发
+        else if (tracking && tracking.tracking_started) {
           map[receiverId] = 'status-started'
-        } else {
+        }
+        // 默认: 待出发
+        else {
           map[receiverId] = 'status-pending'
         }
       })
@@ -1306,12 +1341,27 @@ export default {
     },
 
     // 获取追踪状态文本
+    // Task 2: 更新状态逻辑，增加"已迟到"状态
     getTrackingStatusText(receiverId) {
       const tracking = this.order.actor_tracking && this.order.actor_tracking[receiverId]
-      if (!tracking) return '待出发'
-      if (tracking.is_completed) return '已完成'
-      if (tracking.arrive_time) return '已打卡'
-      if (tracking.tracking_started) return '已出发'
+      const gatherTime = this.order.work_start_time || this.order.gather_time
+      const now = Date.now()
+
+      // 优先级1: 已完成
+      if (tracking && tracking.is_completed) return '已完成'
+
+      // 优先级2: 已打卡（进行中）
+      if (tracking && tracking.arrive_time) return '已打卡'
+
+      // 优先级3: 已迟到（未打卡且超过集合时间）
+      if (gatherTime && now > gatherTime && (!tracking || !tracking.arrive_time)) {
+        return '已迟到'
+      }
+
+      // 优先级4: 已出发（进行中）
+      if (tracking && tracking.tracking_started) return '已出发'
+
+      // 默认: 待出发
       return '待出发'
     },
 
@@ -1327,6 +1377,79 @@ export default {
 
     goBack() {
       uni.navigateBack()
+    },
+
+    // Task 4: 判断是否可以取消演员资格
+    // 条件：当前时间 > 集合时间 + 10分钟 且 演员未打卡
+    canCancelActor(receiverId) {
+      const gatherTime = this.order.work_start_time || this.order.gather_time
+      if (!gatherTime) return false
+
+      const now = Date.now()
+      const tenMinutesLater = gatherTime + 10 * 60 * 1000 // 10分钟
+
+      // 检查是否超过集合时间10分钟
+      if (now <= tenMinutesLater) return false
+
+      // 检查演员是否已打卡
+      const tracking = this.order.actor_tracking && this.order.actor_tracking[receiverId]
+      if (tracking && tracking.arrive_time) return false // 已打卡，不能取消
+
+      return true
+    },
+
+    // Task 4: 处理取消资格按钮点击
+    handleCancelActorTap(e) {
+      const receiverId = e.currentTarget.dataset.id
+      if (receiverId) {
+        this.cancelActorQualification(receiverId)
+      }
+    },
+
+    // Task 4: 取消演员资格
+    async cancelActorQualification(actorId) {
+      const actorName = this.getReceiverName(actorId)
+
+      uni.showModal({
+        title: '取消资格',
+        content: '确定要取消【' + actorName + '】的接单资格吗？\n\n该演员已超时10分钟未打卡，取消后将从订单中移除，并扣除5分信用分。',
+        confirmText: '确认取消',
+        confirmColor: '#F44336',
+        success: async (res) => {
+          if (res.confirm) {
+            try {
+              uni.showLoading({ title: '处理中...', mask: true })
+
+              const orderCo = uniCloud.importObject('order-co')
+              const result = await orderCo.removeActorFromOrder(this.orderId, actorId, 'late_cancellation')
+
+              uni.hideLoading()
+
+              if (result.code === 0) {
+                uni.showToast({
+                  title: result.message || '已取消资格',
+                  icon: 'success'
+                })
+
+                // 刷新订单详情
+                await this.loadOrderDetail()
+              } else {
+                uni.showToast({
+                  title: result.message || '操作失败',
+                  icon: 'none'
+                })
+              }
+            } catch (error) {
+              uni.hideLoading()
+              console.error('取消演员资格失败:', error)
+              uni.showToast({
+                title: '网络错误，请重试',
+                icon: 'none'
+              })
+            }
+          }
+        }
+      })
     }
   }
 }
@@ -1531,6 +1654,12 @@ export default {
     &.status-completed {
       background-color: rgba($success-color, 0.2);
       color: $success-color;
+    }
+
+    // Task 2: 迟到状态样式
+    &.status-late {
+      background-color: rgba(#F44336, 0.2);
+      color: #F44336;
     }
   }
 }
@@ -2106,6 +2235,12 @@ export default {
       background-color: rgba($success-color, 0.2);
       color: $success-color;
     }
+
+    // Task 2: 迟到状态样式
+    &.status-late {
+      background-color: rgba(#F44336, 0.2);
+      color: #F44336;
+    }
   }
 }
 
@@ -2138,6 +2273,32 @@ export default {
 
   &:active {
     opacity: 0.8;
+  }
+}
+
+// Task 4: 取消资格按钮样式
+.cancel-actor-btn {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 12rpx 24rpx;
+  background: linear-gradient(135deg, rgba(#F44336, 0.2) 0%, rgba(#F44336, 0.1) 100%);
+  border: 1rpx solid #F44336;
+  border-radius: $border-radius-base;
+  font-size: $font-size-sm;
+
+  text {
+    color: #F44336;
+    font-weight: $font-weight-medium;
+  }
+
+  &::after {
+    border: none;
+  }
+
+  &:active {
+    opacity: 0.8;
+    background: rgba(#F44336, 0.3);
   }
 }
 </style>

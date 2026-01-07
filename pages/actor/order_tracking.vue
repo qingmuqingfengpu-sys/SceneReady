@@ -126,12 +126,12 @@
           <button
             v-if="!isCheckedIn"
             class="checkin-btn"
-            :class="{ disabled: !canCheckIn }"
-            :disabled="!canCheckIn"
+            :class="{ disabled: !canCheckIn || !isStarted }"
+            :disabled="!canCheckIn || !isStarted"
             @tap="checkIn"
           >
             <uni-icons type="checkmarkempty" size="28" color="#000"></uni-icons>
-            <text>{{ canCheckIn ? '打卡签到' : '未到达集合点' }}</text>
+            <text>{{ !isStarted ? '请先点击出发' : (canCheckIn ? '打卡签到' : '未到达集合点') }}</text>
           </button>
 
           <view v-else class="checkin-done">
@@ -177,7 +177,7 @@
         </button>
         <!-- 已出发但未打卡 -->
         <button v-else-if="!isCheckedIn" class="btn-primary" :class="{ disabled: !canCheckIn }" :disabled="!canCheckIn" @tap="checkIn">
-          {{ canCheckIn ? '打卡签到' : '未到达集合点' }}
+          {{ canCheckIn ? '打卡签到' : '前往集合点中...' }}
         </button>
         <!-- 已打卡但未完成 -->
         <button v-else-if="!isCompleted" class="btn-primary waiting" disabled>待剧组确认</button>
@@ -502,6 +502,15 @@ export default {
     },
 
     async checkIn() {
+      // Task 1: 必须先点击"我已出发"才能打卡
+      if (!this.isStarted) {
+        uni.showToast({
+          title: '请先点击我已出发',
+          icon: 'none'
+        })
+        return
+      }
+
       if (!this.canCheckIn) {
         uni.showToast({
           title: '请先到达集合地点（100米范围内）',
@@ -635,19 +644,23 @@ export default {
       })
     },
 
+    // Task 3: 重构问题上报逻辑，删除安全问题
     reportIssue() {
       uni.showActionSheet({
-        itemList: ['迟到预警', '无法到达', '安全问题', '其他问题'],
+        itemList: ['迟到预警', '无法到达', '其他问题'],
         success: (res) => {
-          const issueTypes = ['late_warning', 'cannot_arrive', 'safety_issue', 'other']
+          const issueTypes = ['late_warning', 'cannot_arrive', 'other']
           const issueType = issueTypes[res.tapIndex]
 
           if (issueType === 'cannot_arrive') {
             // 无法到达需要特殊处理
             this.handleCannotArrive()
-          } else {
-            // 其他问题类型直接上报
-            this.submitIssue(issueType)
+          } else if (issueType === 'late_warning') {
+            // Task 3: 迟到预警 - 发送通知给剧组，不再自动取消订单
+            this.handleLateWarning()
+          } else if (issueType === 'other') {
+            // Task 3: 其他问题 - 打开输入对话框
+            this.handleOtherIssue()
           }
         }
       })
@@ -696,12 +709,12 @@ export default {
       })
     },
 
-    async submitIssue(issueType) {
+    async submitIssue(issueType, description = '') {
       try {
         const orderCo = uniCloud.importObject('order-co')
         const issueData = {
           issue_type: issueType,
-          description: ''
+          description: description
         }
 
         // 添加位置信息
@@ -729,6 +742,99 @@ export default {
         console.error('上报问题失败:', error)
         uni.showToast({
           title: '网络错误',
+          icon: 'none'
+        })
+      }
+    },
+
+    // Task 3: 迟到预警处理 - 发送通知给剧组，不自动取消订单
+    async handleLateWarning() {
+      uni.showModal({
+        title: '迟到预警',
+        content: '确认发送迟到预警通知给剧组吗？',
+        confirmText: '发送',
+        success: async (res) => {
+          if (res.confirm) {
+            // 获取用户昵称
+            const userName = uni.getStorageSync('userInfo')?.nickname || '演员'
+            const message = '演员昵称: ' + userName + ', 可能迟到'
+
+            // 发送通知给剧组
+            await this.notifyCrew(message, 'late_warning')
+
+            // 同时记录问题
+            await this.submitIssue('late_warning', message)
+          }
+        }
+      })
+    },
+
+    // Task 3: 其他问题处理 - 打开输入对话框
+    handleOtherIssue() {
+      uni.showModal({
+        title: '问题描述',
+        content: '',
+        editable: true,
+        placeholderText: '请输入问题详情...',
+        confirmText: '发送',
+        success: async (res) => {
+          if (res.confirm && res.content) {
+            const inputText = res.content.trim()
+            if (!inputText) {
+              uni.showToast({
+                title: '请输入问题描述',
+                icon: 'none'
+              })
+              return
+            }
+
+            // 获取用户昵称
+            const userName = uni.getStorageSync('userInfo')?.nickname || '演员'
+            const message = '演员昵称: ' + userName + ', "' + inputText + '"'
+
+            // 发送通知给剧组
+            await this.notifyCrew(message, 'other')
+
+            // 同时记录问题
+            await this.submitIssue('other', message)
+          }
+        }
+      })
+    },
+
+    // Task 3: 发送通知给剧组
+    async notifyCrew(message, issueType) {
+      try {
+        uni.showLoading({ title: '发送中...', mask: true })
+
+        const orderCo = uniCloud.importObject('order-co')
+        const res = await orderCo.notifyCrewIssue(this.orderId, {
+          message: message,
+          issue_type: issueType,
+          actor_location: this.myLocation ? {
+            longitude: this.myLocation.longitude,
+            latitude: this.myLocation.latitude
+          } : null
+        })
+
+        uni.hideLoading()
+
+        if (res.code === 0) {
+          uni.showToast({
+            title: '已通知剧组',
+            icon: 'success'
+          })
+        } else {
+          uni.showToast({
+            title: res.message || '通知失败',
+            icon: 'none'
+          })
+        }
+      } catch (error) {
+        uni.hideLoading()
+        console.error('通知剧组失败:', error)
+        uni.showToast({
+          title: '网络错误，请重试',
           icon: 'none'
         })
       }

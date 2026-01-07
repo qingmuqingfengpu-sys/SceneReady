@@ -1,61 +1,118 @@
 /**
- * 全局设计系统 - 艺拍即合
- * Global Design System
+ * Global Design System - YiPaiJiHe
+ * CSS variable powered light/dark theme tokens.
  */
 
-/* ============ 色调 Color Palette ============ */
-$primary-color: #FFD700;        // Movie Gold - 主色（代表影视行业、金钱、高亮）
-$secondary-color: #2979FF;      // Safety Blue - 辅色（地图轨迹、LBS追踪、安全中心）
-$background-color: #121212;     // Dark Gray - 背景色（沉浸式暗黑模式）
-$alert-color: #FF5252;          // Crimson Red - 警告色（SOS、迟到预警、黑榜）
+/* Theme tokens exposed as CSS variables */
+:root,
+page {
+  --primary-color: #FFD700;
+  --secondary-color: #2979FF;
+  --background-color: #121212;
+  --alert-color: #FF5252;
 
-// 辅助颜色
-$success-color: #4CAF50;        // 成功状态
-$warning-color: #FFC107;        // 警告状态
-$info-color: #00BCD4;           // 信息提示
+  --success-color: #4CAF50;
+  --warning-color: #FFC107;
+  --info-color: #00BCD4;
 
-// 中性色
-$white: #FFFFFF;
-$black: #000000;
-$gray-1: #F5F5F5;               // 浅灰
-$gray-2: #E0E0E0;
-$gray-3: #9E9E9E;
-$gray-4: #424242;
-$gray-5: #212121;
+  --white: #FFFFFF;
+  --black: #000000;
+  --gray-1: #F5F5F5;
+  --gray-2: #E0E0E0;
+  --gray-3: #9E9E9E;
+  --gray-4: #424242;
+  --gray-5: #212121;
 
-// 背景层级
-$bg-primary: #121212;           // 主背景
-$bg-secondary: #1E1E1E;         // 次级背景（卡片）
-$bg-tertiary: #2C2C2C;          // 三级背景（悬浮层）
+  --bg-primary: #121212;
+  --bg-secondary: #1E1E1E;
+  --bg-tertiary: #2C2C2C;
 
-// 文本颜色
-$text-primary: #FFFFFF;         // 主要文本
-$text-secondary: rgba(255, 255, 255, 0.7);  // 次要文本
-$text-disabled: rgba(255, 255, 255, 0.38);  // 禁用文本
-$text-hint: rgba(255, 255, 255, 0.5);       // 提示文本
+  --text-primary: #FFFFFF;
+  --text-secondary: rgba(255, 255, 255, 0.7);
+  --text-disabled: rgba(255, 255, 255, 0.38);
+  --text-hint: rgba(255, 255, 255, 0.5);
+}
+
+/* Explicit dark overrides for clarity */
+:root[data-theme='dark'],
+page[data-theme='dark'] {
+  --bg-primary: #121212;
+  --bg-secondary: #1E1E1E;
+  --bg-tertiary: #2C2C2C;
+
+  --text-primary: #FFFFFF;
+  --text-secondary: rgba(255, 255, 255, 0.7);
+  --text-disabled: rgba(255, 255, 255, 0.38);
+  --text-hint: rgba(255, 255, 255, 0.5);
+}
+
+/* Light theme: white background, dark text */
+:root[data-theme='light'],
+page[data-theme='light'] {
+  --background-color: #FFFFFF;
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #F6F6F6;
+  --bg-tertiary: #ECECEC;
+
+  --text-primary: #111111;
+  --text-secondary: rgba(0, 0, 0, 0.75);
+  --text-disabled: rgba(0, 0, 0, 0.38);
+  --text-hint: rgba(0, 0, 0, 0.5);
+}
+
+/* ============ Color Palette (via CSS vars) ============ */
+$primary-color: var(--primary-color);        // Movie Gold
+$secondary-color: var(--secondary-color);    // Safety Blue
+$background-color: var(--background-color);  // Background
+$alert-color: var(--alert-color);            // Alert color
+
+// Accent colors
+$success-color: var(--success-color);
+$warning-color: var(--warning-color);
+$info-color: var(--info-color);
+
+// Neutral colors
+$white: var(--white);
+$black: var(--black);
+$gray-1: var(--gray-1);
+$gray-2: var(--gray-2);
+$gray-3: var(--gray-3);
+$gray-4: var(--gray-4);
+$gray-5: var(--gray-5);
+
+// Background layers
+$bg-primary: var(--bg-primary);
+$bg-secondary: var(--bg-secondary);
+$bg-tertiary: var(--bg-tertiary);
+
+// Text colors
+$text-primary: var(--text-primary);
+$text-secondary: var(--text-secondary);
+$text-disabled: var(--text-disabled);
+$text-hint: var(--text-hint);
 
 
-/* ============ 字体 Typography ============ */
-// 字体家族
+/* ============ Typography ============ */
+// Font families
 $font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
 $font-family-monospace: 'SF Mono', Monaco, Consolas, 'Courier New', monospace;
 
-// 字体大小
-$font-size-xs: 20rpx;           // 极小（提示文本）
-$font-size-sm: 24rpx;           // 小（辅助信息）
-$font-size-base: 28rpx;         // 基础（正文）
-$font-size-lg: 32rpx;           // 大（小标题）
-$font-size-xl: 36rpx;           // 特大（标题）
-$font-size-xxl: 48rpx;          // 超大（重要数字）
+// Font sizes
+$font-size-xs: 20rpx;           // tiny (helper text)
+$font-size-sm: 24rpx;           // small (secondary info)
+$font-size-base: 28rpx;         // base (body)
+$font-size-lg: 32rpx;           // large (subtitle)
+$font-size-xl: 36rpx;           // extra large (title)
+$font-size-xxl: 48rpx;          // huge (headline numbers)
 
-// 字重
+// Font weights
 $font-weight-light: 300;
 $font-weight-normal: 400;
 $font-weight-medium: 500;
 $font-weight-bold: 700;
 
 
-/* ============ 间距 Spacing ============ */
+/* ============ Spacing ============ */
 $spacing-xs: 8rpx;
 $spacing-sm: 16rpx;
 $spacing-base: 24rpx;
@@ -64,20 +121,20 @@ $spacing-xl: 48rpx;
 $spacing-xxl: 64rpx;
 
 
-/* ============ 圆角 Border Radius ============ */
-$border-radius-sm: 8rpx;        // 小圆角（标签）
-$border-radius-base: 16rpx;     // 基础圆角（卡片）
-$border-radius-lg: 24rpx;       // 大圆角（弹窗）
-$border-radius-circle: 50%;     // 圆形（头像）
+/* ============ Border Radius ============ */
+$border-radius-sm: 8rpx;        // small (tags)
+$border-radius-base: 16rpx;     // base (cards)
+$border-radius-lg: 24rpx;       // large (modals)
+$border-radius-circle: 50%;     // circle (avatars)
 
 
-/* ============ 阴影 Shadows ============ */
+/* ============ Shadows ============ */
 $shadow-sm: 0 2rpx 8rpx rgba(0, 0, 0, 0.15);
 $shadow-base: 0 4rpx 16rpx rgba(0, 0, 0, 0.25);
 $shadow-lg: 0 8rpx 24rpx rgba(0, 0, 0, 0.35);
 
 
-/* ============ 层级 Z-Index ============ */
+/* ============ Z-Index ============ */
 $z-index-base: 1;
 $z-index-card: 10;
 $z-index-drawer: 100;
@@ -86,34 +143,34 @@ $z-index-modal: 1000;
 $z-index-toast: 2000;
 
 
-/* ============ 通用混合宏 Mixins ============ */
-// Flexbox 居中
+/* ============ Mixins ============ */
+// Flex center
 @mixin flex-center {
   display: flex;
   justify-content: center;
   align-items: center;
 }
 
-// Flexbox 垂直布局
+// Flex column
 @mixin flex-column {
   display: flex;
   flex-direction: column;
 }
 
-// Flexbox 水平布局
+// Flex row
 @mixin flex-row {
   display: flex;
   flex-direction: row;
 }
 
-// 单行文本省略
+// Single line ellipsis
 @mixin text-ellipsis {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-// 多行文本省略
+// Multi line ellipsis
 @mixin text-ellipsis-multi($lines: 2) {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -122,7 +179,7 @@ $z-index-toast: 2000;
   text-overflow: ellipsis;
 }
 
-// 卡片样式
+// Card style
 @mixin card {
   background-color: $bg-secondary;
   border-radius: $border-radius-base;
@@ -130,7 +187,7 @@ $z-index-toast: 2000;
   box-shadow: $shadow-base;
 }
 
-// 按钮样式
+// Primary button
 @mixin button-primary {
   background: linear-gradient(135deg, $primary-color 0%, #FFED4E 100%);
   color: $black;
@@ -160,7 +217,7 @@ $z-index-toast: 2000;
 }
 
 
-/* ============ 福利标签样式 Welfare Tags ============ */
+/* ============ Welfare Tags ============ */
 @mixin welfare-tag {
   display: inline-flex;
   align-items: center;
@@ -179,7 +236,7 @@ $z-index-toast: 2000;
 }
 
 
-/* ============ 状态标签 Status Tags ============ */
+/* ============ Status Tags ============ */
 @mixin status-tag($color) {
   display: inline-block;
   padding: 4rpx 12rpx;
@@ -192,7 +249,7 @@ $z-index-toast: 2000;
 }
 
 
-/* ============ 信用等级徽章 Credit Badge ============ */
+/* ============ Credit Badge ============ */
 @mixin credit-badge($level) {
   @if $level == 'gold' {
     background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
