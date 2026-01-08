@@ -777,33 +777,44 @@ export default {
         uni.hideLoading()
 
         if (res.code === 0) {
-          uni.showToast({
-            title: '申请已提交，请等待审核',
-            icon: 'success',
-            duration: 2000
+          // 显示成功弹窗
+          uni.showModal({
+            title: '申请成功',
+            content: '申请已提交成功，请等待剧组审核。',
+            showCancel: false,
+            confirmText: '我知道了',
+            success: () => {
+              // 刷新统计
+              this.loadStats()
+            }
           })
-          // 刷新统计
-          this.loadStats()
         } else {
           let errorMsg = res.message || '申请失败'
           if (res.code === 401) {
             errorMsg = '请先登录'
-            setTimeout(() => {
-              uni.reLaunch({ url: '/pages/index/index' })
-            }, 1500)
+            uni.showModal({
+              title: '提示',
+              content: errorMsg,
+              showCancel: false,
+              success: () => {
+                uni.reLaunch({ url: '/pages/index/index' })
+              }
+            })
+          } else {
+            uni.showModal({
+              title: '申请失败',
+              content: errorMsg,
+              showCancel: false
+            })
           }
-          uni.showToast({
-            title: errorMsg,
-            icon: 'none',
-            duration: 2500
-          })
         }
       } catch (error) {
         uni.hideLoading()
         console.error('申请订单失败:', error)
-        uni.showToast({
-          title: '网络错误，请重试',
-          icon: 'none'
+        uni.showModal({
+          title: '网络错误',
+          content: '网络连接失败，请检查网络后重试。',
+          showCancel: false
         })
       }
     }

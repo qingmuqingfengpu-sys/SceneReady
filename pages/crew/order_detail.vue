@@ -168,7 +168,7 @@
                       <image class="applicant-avatar" :src="getActorAvatar(applicant.actor_info)" mode="aspectFill"></image>
                       <view class="applicant-detail">
                         <view class="applicant-name-row">
-                          <text class="applicant-name">{{ applicant.actor_info.nickname || '演员' }}</text>
+                          <text class="applicant-name">{{ applicant.actor_info.nickname || '--' }}</text>
                           <view v-if="applicant.actor_info.is_realname_auth" class="verified-tag">
                             <uni-icons type="auth" size="12" color="#4CAF50"></uni-icons>
                             <text>已认证</text>
@@ -279,15 +279,13 @@
                   <button class="btn-danger" @tap="cancelOrder">取消订单</button>
                 </template>
 
-                <!-- 进行中状态 -->
+                <!-- 进行中状态 - 无需额外按钮 -->
                 <template v-else-if="order.order_status === 1">
-                  <button class="btn-secondary" @tap="contactActor">联系演员</button>
                 </template>
 
                 <!-- 待支付状态 -->
                 <template v-else-if="order.order_status === 2">
                   <button class="btn-primary" @tap="payOrder">立即支付</button>
-                  <button class="btn-secondary" @tap="contactActor">联系演员</button>
                 </template>
 
                 <!-- 已完成状态 -->
@@ -454,7 +452,7 @@
                 <image class="applicant-avatar" :src="getActorAvatar(applicant.actor_info)" mode="aspectFill"></image>
                 <view class="applicant-detail">
                   <view class="applicant-name-row">
-                    <text class="applicant-name">{{ applicant.actor_info.nickname || '演员' }}</text>
+                    <text class="applicant-name">{{ applicant.actor_info.nickname || '--' }}</text>
                     <view v-if="applicant.actor_info.is_realname_auth" class="verified-tag">
                       <uni-icons type="auth" size="12" color="#4CAF50"></uni-icons>
                       <text>已认证</text>
@@ -574,13 +572,11 @@
           <!-- 进行中状态 -->
           <template v-else-if="order.order_status === 1">
             <button class="btn-primary" @tap="goToTracking">查看追踪</button>
-            <button class="btn-secondary" @tap="contactActor">联系演员</button>
           </template>
 
           <!-- 待支付状态 -->
           <template v-else-if="order.order_status === 2">
             <button class="btn-primary" @tap="payOrder">立即支付</button>
-            <button class="btn-secondary" @tap="contactActor">联系演员</button>
           </template>
 
           <!-- 已完成状态 -->
@@ -917,6 +913,9 @@ export default {
 
     async loadOrderIssues() {
       try {
+        // 先清空数组,防止重复
+        this.orderIssues = []
+
         const db = uniCloud.database()
         const res = await db.collection('order_issues')
           .where({ order_id: this.orderId })
@@ -924,10 +923,20 @@ export default {
           .get()
 
         if (res.result.data) {
-          this.orderIssues = res.result.data
+          // 基于 _id 去重,防止后端返回重复数据
+          const uniqueIssues = []
+          const seenIds = new Set()
+          for (const issue of res.result.data) {
+            if (issue._id && !seenIds.has(issue._id)) {
+              seenIds.add(issue._id)
+              uniqueIssues.push(issue)
+            }
+          }
+          this.orderIssues = uniqueIssues
         }
       } catch (error) {
         console.error('加载问题上报失败:', error)
+        this.orderIssues = []
       }
     },
 
@@ -1077,14 +1086,6 @@ export default {
       })
     },
 
-    contactActor() {
-      // TODO: 实现联系演员功能
-      uni.showToast({
-        title: '功能开发中',
-        icon: 'none'
-      })
-    },
-
     payOrder() {
       // TODO: 实现支付功能
       uni.showToast({
@@ -1189,9 +1190,10 @@ export default {
         return
       }
 
+      const actorNickname = applicant.actor_info.nickname || '--'
       uni.showModal({
         title: '确认通过',
-        content: `确定通过【${applicant.actor_info.nickname}】的申请吗？`,
+        content: '确定通过【' + actorNickname + '】的申请吗？',
         success: async (res) => {
           if (res.confirm) {
             await this.doReviewApplicant(applicant.actor_id, 'approve')
@@ -1202,9 +1204,10 @@ export default {
 
     // 拒绝申请
     async rejectApplicant(applicant) {
+      const actorNickname = applicant.actor_info.nickname || '--'
       uni.showModal({
         title: '确认拒绝',
-        content: `确定拒绝【${applicant.actor_info.nickname}】的申请吗？`,
+        content: '确定拒绝【' + actorNickname + '】的申请吗？',
         success: async (res) => {
           if (res.confirm) {
             await this.doReviewApplicant(applicant.actor_id, 'reject')
@@ -1283,7 +1286,9 @@ export default {
     // 获取接单人姓名
     getReceiverName(receiverId) {
       const receiver = this.receiversMap[receiverId]
-      return receiver ? receiver.nickname || '演员' : '演员'
+      // 优先使用 nickname,若无则显示 '--'
+      if (!receiver) return '--'
+      return receiver.nickname || '--'
     },
 
     // 获取接单人信息

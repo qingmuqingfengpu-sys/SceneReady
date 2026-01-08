@@ -1441,6 +1441,214 @@ module.exports = {
   },
 
   /**
+   * 搜索演员 - 剧组端
+   * @param {Object} params 搜索参数
+   * @param {string} params.keyword 搜索关键词(昵称)
+   * @param {number} params.userLongitude 用户经度(用于计算距离)
+   * @param {number} params.userLatitude 用户纬度(用于计算距离)
+   * @param {number} params.limit 返回数量限制
+   * @returns {Object} 搜索结果
+   */
+  async searchActors(params = {}) {
+    try {
+      const userId = this.authInfo && this.authInfo.uid
+
+      if (!userId) {
+        return {
+          code: 401,
+          message: '请先登录'
+        }
+      }
+
+      // 检查用户角色(必须是剧组)
+      const userRes = await db.collection('uni-id-users')
+        .doc(userId)
+        .field({ user_role: true })
+        .get()
+
+      if (!userRes.data || userRes.data.length === 0) {
+        return {
+          code: 404,
+          message: '用户不存在'
+        }
+      }
+
+      const user = userRes.data[0]
+      if (user.user_role !== 1) {
+        return {
+          code: 403,
+          message: '仅剧组用户可以搜索演员'
+        }
+      }
+
+      const {
+        keyword = '',
+        userLongitude,
+        userLatitude,
+        limit = 50
+      } = params
+
+      if (!keyword || keyword.trim() === '') {
+        return {
+          code: 0,
+          data: []
+        }
+      }
+
+      const searchKeyword = keyword.trim()
+
+      // 构建查询条件 - 搜索所有演员(包括在线和离线，不限制认证状态)
+      let whereCondition = {
+        user_role: 2, // 演员
+        nickname: new RegExp(searchKeyword, 'i') // 模糊匹配昵称
+      }
+
+      let actors = []
+
+      // 如果有位置信息，使用地理位置查询计算距离
+      if (userLongitude && userLatitude) {
+        // 先查询出所有匹配的演员
+        const actorRes = await db.collection('uni-id-users')
+          .where(whereCondition)
+          .field({
+            _id: true,
+            nickname: true,
+            avatar: true,
+            avatar_file: true,
+            gender: true,
+            height: true,
+            body_type: true,
+            skills: true,
+            video_card: true,
+            video_card_url: true,
+            credit_score_actor: true,
+            current_location: true,
+            last_login_location: true,
+            location: true,
+            online_status: true,
+            last_active_time: true,
+            profile_text: true
+          })
+          .orderBy('credit_score_actor', 'desc')
+          .limit(limit)
+          .get()
+
+        actors = actorRes.data || []
+
+        // 计算每个演员与用户的距离
+        const userLng = parseFloat(userLongitude)
+        const userLat = parseFloat(userLatitude)
+
+        actors = actors.map(actor => {
+          let actorLng = null
+          let actorLat = null
+
+          // 确定演员位置: 在线用current_location，离线用last_login_location或location
+          if (actor.online_status === 1 && actor.current_location && actor.current_location.coordinates) {
+            actorLng = actor.current_location.coordinates[0]
+            actorLat = actor.current_location.coordinates[1]
+          } else if (actor.last_login_location && actor.last_login_location.coordinates) {
+            actorLng = actor.last_login_location.coordinates[0]
+            actorLat = actor.last_login_location.coordinates[1]
+          } else if (actor.location && actor.location.coordinates) {
+            actorLng = actor.location.coordinates[0]
+            actorLat = actor.location.coordinates[1]
+          }
+
+          // 计算距离(单位:米)
+          let distance = null
+          if (actorLng !== null && actorLat !== null) {
+            distance = this._calculateDistance(userLat, userLng, actorLat, actorLng)
+          }
+
+          return {
+            ...actor,
+            distance: distance,
+            distance_km: distance !== null ? (distance / 1000).toFixed(1) : null
+          }
+        })
+
+        // 按距离排序(有距离的在前，无距离的在后)
+        actors.sort((a, b) => {
+          if (a.distance === null && b.distance === null) return 0
+          if (a.distance === null) return 1
+          if (b.distance === null) return -1
+          return a.distance - b.distance
+        })
+
+      } else {
+        // 没有位置信息，按信用分排序
+        const actorRes = await db.collection('uni-id-users')
+          .where(whereCondition)
+          .field({
+            _id: true,
+            nickname: true,
+            avatar: true,
+            avatar_file: true,
+            gender: true,
+            height: true,
+            body_type: true,
+            skills: true,
+            video_card: true,
+            video_card_url: true,
+            credit_score_actor: true,
+            current_location: true,
+            last_login_location: true,
+            location: true,
+            online_status: true,
+            last_active_time: true,
+            profile_text: true
+          })
+          .orderBy('credit_score_actor', 'desc')
+          .limit(limit)
+          .get()
+
+        actors = actorRes.data || []
+      }
+
+      return {
+        code: 0,
+        data: actors
+      }
+
+    } catch (error) {
+      console.error('搜索演员失败:', error)
+      return {
+        code: 500,
+        message: error.message || '系统错误'
+      }
+    }
+  },
+
+  /**
+   * 计算两点间的距离(Haversine公式)
+   * @param {number} lat1 纬度1
+   * @param {number} lng1 经度1
+   * @param {number} lat2 纬度2
+   * @param {number} lng2 经度2
+   * @returns {number} 距离(米)
+   */
+  _calculateDistance(lat1, lng1, lat2, lng2) {
+    const R = 6371000 // 地球半径(米)
+    const dLat = this._toRad(lat2 - lat1)
+    const dLng = this._toRad(lng2 - lng1)
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(this._toRad(lat1)) * Math.cos(this._toRad(lat2)) *
+              Math.sin(dLng / 2) * Math.sin(dLng / 2)
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return R * c
+  },
+
+  /**
+   * 角度转弧度
+   * @param {number} deg 角度
+   * @returns {number} 弧度
+   */
+  _toRad(deg) {
+    return deg * Math.PI / 180
+  },
+
+  /**
    * 更新演员位置 - 演员端
    * @param {Object} location 位置信息
    * @returns {Object} 操作结果
