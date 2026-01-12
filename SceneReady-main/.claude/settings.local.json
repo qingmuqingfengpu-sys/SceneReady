@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(if not exist \"D:\\学习\\大创\\艺拍即合\\艺拍即合\\uniCloud-aliyun\\database\" mkdir \"D:\\学习\\大创\\艺拍即合\\艺拍即合\\uniCloud-aliyun\\database\")",
+      "Bash(mkdir:*)",
+      "Bash(tree:*)",
+      "Bash(dir /s /b)",
+      "Bash(npm run dev:mp-weixin:*)",
+      "Bash(npm run:*)",
+      "Bash(dir:*)",
+      "Bash(findstr:*)",
+      "Bash(git rm:*)",
+      "Bash(del \"\\\\?\\\\D:\\\\学习\\\\大创\\\\艺拍即合\\\\艺拍即合\\\\nul\")",
+      "Bash(rm:*)",
+      "Bash(git add:*)",
+      "WebFetch(domain:doc.dcloud.net.cn)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

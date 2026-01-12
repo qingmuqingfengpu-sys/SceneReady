@@ -1,0 +1,175 @@
+{
+  "bsonType": "object",
+  "description": "uni-id-users 扩展字段",
+  "properties": {
+    "description": {
+      "bsonType": "string",
+      "title": "个人简介",
+      "description": "用户的个人简介/自我介绍",
+      "trim": "both",
+      "maxLength": 500
+    },
+    "comp_cards": {
+      "bsonType": "array",
+      "title": "模卡",
+      "description": "用户的模卡(图片和视频URL)",
+      "items": {
+        "bsonType": "object",
+        "properties": {
+          "type": {
+            "bsonType": "string",
+            "title": "类型",
+            "description": "模卡类型: image-图片, video-视频",
+            "enum": ["image", "video"]
+          },
+          "url": {
+            "bsonType": "string",
+            "title": "URL",
+            "description": "模卡文件URL"
+          },
+          "cover_url": {
+            "bsonType": "string",
+            "title": "封面URL",
+            "description": "视频封面URL(仅视频类型需要)"
+          },
+          "create_time": {
+            "bsonType": "timestamp",
+            "title": "创建时间"
+          }
+        }
+      }
+    },
+    "is_realname_auth": {
+      "bsonType": "bool",
+      "title": "实名认证状态",
+      "description": "是否已完成实名认证",
+      "defaultValue": false
+    },
+    "realname_info": {
+      "bsonType": "object",
+      "title": "实名认证信息",
+      "description": "实名认证的详细信息",
+      "properties": {
+        "real_name": {
+          "bsonType": "string",
+          "title": "真实姓名"
+        },
+        "id_card": {
+          "bsonType": "string",
+          "title": "身份证号"
+        },
+        "id_card_front": {
+          "bsonType": "string",
+          "title": "身份证正面照"
+        },
+        "id_card_back": {
+          "bsonType": "string",
+          "title": "身份证反面照"
+        },
+        "submit_time": {
+          "bsonType": "timestamp",
+          "title": "提交时间"
+        },
+        "verify_time": {
+          "bsonType": "timestamp",
+          "title": "审核时间"
+        },
+        "verify_status": {
+          "bsonType": "string",
+          "title": "审核状态",
+          "enum": ["pending", "approved", "rejected"],
+          "description": "pending-待审核, approved-已通过, rejected-已拒绝"
+        },
+        "reject_reason": {
+          "bsonType": "string",
+          "title": "拒绝原因"
+        }
+      }
+    },
+    "user_role": {
+      "bsonType": "int",
+      "title": "用户角色",
+      "description": "用户角色: 1-剧组, 2-演员",
+      "enum": [
+        { "text": "剧组", "value": 1 },
+        { "text": "演员", "value": 2 }
+      ]
+    },
+    "height": {
+      "bsonType": "int",
+      "title": "身高",
+      "description": "身高(cm)",
+      "minimum": 100,
+      "maximum": 250
+    },
+    "body_type": {
+      "bsonType": "string",
+      "title": "体型",
+      "description": "体型: slim-偏瘦, normal-标准, athletic-健壮, plus-偏胖",
+      "enum": ["slim", "normal", "athletic", "plus"]
+    },
+    "skills": {
+      "bsonType": "array",
+      "title": "特长",
+      "description": "用户的特长技能",
+      "items": {
+        "bsonType": "string"
+      }
+    },
+    "video_card_url": {
+      "bsonType": "string",
+      "title": "视频模卡URL",
+      "description": "视频模卡的URL地址"
+    },
+    "credit_score_actor": {
+      "bsonType": "int",
+      "title": "演员信用分",
+      "description": "作为演员的信用分",
+      "minimum": 0,
+      "maximum": 150,
+      "defaultValue": 100
+    },
+    "credit_score_crew": {
+      "bsonType": "int",
+      "title": "剧组信用分",
+      "description": "作为剧组的信用分",
+      "minimum": 0,
+      "maximum": 150,
+      "defaultValue": 100
+    },
+    "current_location": {
+      "bsonType": "object",
+      "title": "当前位置",
+      "description": "用户当前位置(GeoJSON Point)",
+      "properties": {
+        "type": {
+          "bsonType": "string",
+          "enum": ["Point"]
+        },
+        "coordinates": {
+          "bsonType": "array",
+          "description": "经纬度坐标 [longitude, latitude]"
+        }
+      }
+    },
+    "location_update_time": {
+      "bsonType": "timestamp",
+      "title": "位置更新时间"
+    },
+    "online_status": {
+      "bsonType": "int",
+      "title": "在线状态",
+      "description": "1-在线, 0-离线",
+      "defaultValue": 0
+    },
+    "wx_openid": {
+      "bsonType": "object",
+      "title": "微信openid",
+      "description": "各平台微信openid"
+    },
+    "wx_unionid": {
+      "bsonType": "string",
+      "title": "微信unionid"
+    }
+  }
+}

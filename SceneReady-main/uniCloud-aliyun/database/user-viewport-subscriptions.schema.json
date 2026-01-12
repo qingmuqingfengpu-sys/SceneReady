@@ -1,0 +1,80 @@
+{
+  "bsonType": "object",
+  "required": ["user_id", "push_clientid"],
+  "permission": {
+    "read": "doc.user_id == auth.uid",
+    "create": "auth.uid != null",
+    "update": "doc.user_id == auth.uid",
+    "delete": "doc.user_id == auth.uid"
+  },
+  "properties": {
+    "_id": {
+      "description": "ID"
+    },
+    "user_id": {
+      "bsonType": "string",
+      "description": "用户ID",
+      "foreignKey": "uni-id-users._id"
+    },
+    "push_clientid": {
+      "bsonType": "string",
+      "description": "推送客户端ID (uni-push cid)"
+    },
+    "viewport": {
+      "bsonType": "object",
+      "description": "订阅的视口范围",
+      "properties": {
+        "southwest": {
+          "bsonType": "object",
+          "properties": {
+            "latitude": { "bsonType": "double" },
+            "longitude": { "bsonType": "double" }
+          }
+        },
+        "northeast": {
+          "bsonType": "object",
+          "properties": {
+            "latitude": { "bsonType": "double" },
+            "longitude": { "bsonType": "double" }
+          }
+        }
+      }
+    },
+    "user_location": {
+      "bsonType": "object",
+      "description": "用户当前位置",
+      "properties": {
+        "latitude": { "bsonType": "double" },
+        "longitude": { "bsonType": "double" }
+      }
+    },
+    "role": {
+      "bsonType": "string",
+      "description": "用户角色: crew/actor",
+      "enum": ["crew", "actor"]
+    },
+    "platform": {
+      "bsonType": "string",
+      "description": "平台: mp-weixin/app/h5"
+    },
+    "is_active": {
+      "bsonType": "bool",
+      "description": "是否活跃（页面可见）",
+      "defaultValue": true
+    },
+    "create_time": {
+      "bsonType": "timestamp",
+      "description": "创建时间",
+      "defaultValue": {
+        "$env": "now"
+      }
+    },
+    "update_time": {
+      "bsonType": "timestamp",
+      "description": "更新时间",
+      "defaultValue": {
+        "$env": "now"
+      }
+    }
+  }
+}

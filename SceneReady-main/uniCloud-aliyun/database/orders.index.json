@@ -1,0 +1,90 @@
+[
+  {
+    "IndexName": "publisher_id_status",
+    "MgoKeySchema": {
+      "MgoIndexKeys": [
+        {
+          "Name": "publisher_id",
+          "Direction": "1"
+        },
+        {
+          "Name": "order_status",
+          "Direction": "1"
+        }
+      ],
+      "MgoIsUnique": false
+    }
+  },
+  {
+    "IndexName": "receiver_id_status",
+    "MgoKeySchema": {
+      "MgoIndexKeys": [
+        {
+          "Name": "receiver_id",
+          "Direction": "1"
+        },
+        {
+          "Name": "order_status",
+          "Direction": "1"
+        }
+      ],
+      "MgoIsUnique": false
+    }
+  },
+  {
+    "IndexName": "order_status_create_time",
+    "MgoKeySchema": {
+      "MgoIndexKeys": [
+        {
+          "Name": "order_status",
+          "Direction": "1"
+        },
+        {
+          "Name": "create_time",
+          "Direction": "-1"
+        }
+      ],
+      "MgoIsUnique": false
+    }
+  },
+  {
+    "IndexName": "meeting_location_2dsphere",
+    "MgoKeySchema": {
+      "MgoIndexKeys": [
+        {
+          "Name": "meeting_location",
+          "Direction": "2dsphere"
+        }
+      ],
+      "MgoIsUnique": false
+    }
+  },
+  {
+    "IndexName": "meeting_time",
+    "MgoKeySchema": {
+      "MgoIndexKeys": [
+        {
+          "Name": "meeting_time",
+          "Direction": "1"
+        }
+      ],
+      "MgoIsUnique": false
+    }
+  },
+  {
+    "IndexName": "order_type_status",
+    "MgoKeySchema": {
+      "MgoIndexKeys": [
+        {
+          "Name": "order_type",
+          "Direction": "1"
+        },
+        {
+          "Name": "order_status",
+          "Direction": "1"
+        }
+      ],
+      "MgoIsUnique": false
+    }
+  }
+]
