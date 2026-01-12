@@ -1,0 +1,14 @@
+{
+  "name": "user-co",
+  "version": "1.0.0",
+  "main": "index.obj.js",
+  "description": "用户云对象 - 处理用户资料、认证、统计等功能",
+  "dependencies": {
+    "uni-id-common": "file:../../../../uni_modules/uni-id-common/uniCloud/cloudfunctions/common/uni-id-common"
+  },
+  "cloudfunction-config": {
+    "concurrency": 10,
+    "memorySize": 512,
+    "timeout": 30
+  }
+}

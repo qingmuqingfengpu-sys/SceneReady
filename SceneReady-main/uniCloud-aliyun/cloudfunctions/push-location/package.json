@@ -1,0 +1,7 @@
+{
+  "name": "push-location",
+  "version": "1.0.0",
+  "description": "演员位置更新推送云函数",
+  "main": "index.js",
+  "dependencies": {}
+}

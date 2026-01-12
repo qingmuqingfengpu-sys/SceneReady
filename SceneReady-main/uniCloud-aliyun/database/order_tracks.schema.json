@@ -1,0 +1,128 @@
+{
+  "bsonType": "object",
+  "required": ["order_id", "user_id", "location", "report_time"],
+  "permission": {
+    "read": true,
+    "create": "auth.uid != null",
+    "update": false,
+    "delete": false
+  },
+  "properties": {
+    "_id": {
+      "description": "轨迹记录ID,系统自动生成"
+    },
+    "order_id": {
+      "bsonType": "string",
+      "title": "订单ID",
+      "description": "关联的订单ID",
+      "foreignKey": "orders._id"
+    },
+    "user_id": {
+      "bsonType": "string",
+      "title": "上报人ID",
+      "description": "上报位置的用户ID(演员)",
+      "foreignKey": "uni-id-users._id"
+    },
+    "location": {
+      "bsonType": "object",
+      "title": "位置坐标",
+      "description": "上报的位置经纬度信息",
+      "required": ["type", "coordinates"],
+      "properties": {
+        "type": {
+          "bsonType": "string",
+          "description": "GeoJSON类型",
+          "enum": ["Point"]
+        },
+        "coordinates": {
+          "bsonType": "array",
+          "description": "经纬度坐标 [longitude, latitude]",
+          "items": {
+            "bsonType": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        }
+      }
+    },
+    "location_name": {
+      "bsonType": "string",
+      "title": "位置名称",
+      "description": "位置的地址或名称(可选)",
+      "trim": "both"
+    },
+    "report_time": {
+      "bsonType": "timestamp",
+      "title": "上报时间",
+      "description": "位置上报的时间",
+      "forceDefaultValue": {
+        "$env": "now"
+      }
+    },
+    "accuracy": {
+      "bsonType": "double",
+      "title": "定位精度",
+      "description": "GPS定位精度(米)"
+    },
+    "altitude": {
+      "bsonType": "double",
+      "title": "海拔高度",
+      "description": "海拔高度(米)"
+    },
+    "speed": {
+      "bsonType": "double",
+      "title": "移动速度",
+      "description": "移动速度(米/秒)"
+    },
+    "bearing": {
+      "bsonType": "double",
+      "title": "方向角",
+      "description": "移动方向角度(0-360)"
+    },
+    "track_type": {
+      "bsonType": "string",
+      "title": "轨迹类型",
+      "description": "轨迹类型: auto-自动上报, manual-手动上报, checkpoint-关键点打卡",
+      "defaultValue": "auto",
+      "enum": [
+        {
+          "text": "自动上报",
+          "value": "auto"
+        },
+        {
+          "text": "手动上报",
+          "value": "manual"
+        },
+        {
+          "text": "关键点打卡",
+          "value": "checkpoint"
+        }
+      ]
+    },
+    "distance_to_destination": {
+      "bsonType": "double",
+      "title": "距离目的地",
+      "description": "距离集合地点的距离(米)"
+    },
+    "client_info": {
+      "bsonType": "object",
+      "title": "客户端信息",
+      "description": "上报时的客户端信息",
+      "properties": {
+        "platform": {
+          "bsonType": "string",
+          "description": "平台类型: ios/android/h5"
+        },
+        "app_version": {
+          "bsonType": "string",
+          "description": "应用版本号"
+        },
+        "network": {
+          "bsonType": "string",
+          "description": "网络类型: wifi/4g/5g"
+        }
+      }
+    }
+  },
+  "version": "1.0.0"
+}
