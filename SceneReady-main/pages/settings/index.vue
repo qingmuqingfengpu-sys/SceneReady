@@ -17,6 +17,18 @@
     <view class="hint">
       当前：{{ theme === 'light' ? '白天模式' : '夜间模式' }}
     </view>
+
+    <!-- 账号与安全 -->
+    <view class="section-title">账号与安全</view>
+    <view class="card">
+      <view class="menu-item" @tap="goToDeactivate">
+        <view class="menu-left">
+          <uni-icons type="closeempty" size="24" color="#FF5252"></uni-icons>
+          <text class="menu-text">注销账号</text>
+        </view>
+        <uni-icons type="forward" size="16" color="#999"></uni-icons>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -41,6 +53,23 @@ export default {
       uni.showToast({
         title: this.theme === 'light' ? '已切换到白天模式' : '已切换到夜间模式',
         icon: 'none'
+      })
+    },
+
+    goToDeactivate() {
+      uni.showModal({
+        title: '注销账号',
+        content: '注销账号是不可逆操作，所有数据将被清除。确定要继续吗？',
+        confirmText: '继续',
+        cancelText: '取消',
+        confirmColor: '#FF5252',
+        success: (res) => {
+          if (res.confirm) {
+            uni.navigateTo({
+              url: '/uni_modules/uni-id-pages/pages/userinfo/deactivate/deactivate'
+            })
+          }
+        }
       })
     }
   }
@@ -89,5 +118,38 @@ export default {
   margin-top: $spacing-base;
   font-size: $font-size-sm;
   color: $text-secondary;
+}
+
+.section-title {
+  margin-top: $spacing-xl;
+  margin-bottom: $spacing-base;
+  font-size: $font-size-base;
+  font-weight: $font-weight-bold;
+  color: $text-secondary;
+  padding-left: $spacing-sm;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $spacing-base 0;
+  cursor: pointer;
+  transition: background-color 0.3s;
+
+  &:active {
+    background-color: $bg-tertiary;
+  }
+
+  .menu-left {
+    display: flex;
+    align-items: center;
+    gap: $spacing-sm;
+
+    .menu-text {
+      font-size: $font-size-base;
+      color: $text-primary;
+    }
+  }
 }
 </style>

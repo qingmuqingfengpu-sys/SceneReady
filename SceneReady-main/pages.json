@@ -175,6 +175,13 @@
 				"navigationBarTitleText": "我的模卡",
 				"enablePullDownRefresh": true
 			}
+		},
+		{
+			"path": "pages/crew/enterprise_auth",
+			"style": {
+				"navigationBarTitleText": "企业认证",
+				"enablePullDownRefresh": false
+			}
 		}
 	],
 	"easycom": {

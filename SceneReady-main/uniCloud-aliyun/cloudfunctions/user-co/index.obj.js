@@ -752,5 +752,206 @@ module.exports = {
         message: error.message || '系统错误'
       }
     }
+  },
+
+  /**
+   * 提交企业认证
+   * @param {Object} data 企业认证数据
+   * @returns {Object} 操作结果
+   */
+  async submitEnterpriseAuth(data) {
+    try {
+      if (!this.authInfo || !this.authInfo.uid) {
+        return {
+          code: 401,
+          message: '请先登录'
+        }
+      }
+
+      const userId = this.authInfo.uid
+
+      // 校验必填字段
+      const requiredFields = [
+        'enterprise_name',
+        'enterprise_code',
+        'business_license',
+        'legal_representative',
+        'id_card_front',
+        'id_card_back',
+        'contact_mobile'
+      ]
+
+      for (const field of requiredFields) {
+        if (!data[field]) {
+          return {
+            code: 400,
+            message: '请填写完整的企业认证信息'
+          }
+        }
+      }
+
+      // 检查用户角色(必须是剧组)
+      const userRes = await db.collection('uni-id-users')
+        .doc(userId)
+        .field({ user_role: true, enterprise_auth: true, is_enterprise_auth: true })
+        .get()
+
+      if (!userRes.data || userRes.data.length === 0) {
+        return {
+          code: 404,
+          message: '用户不存在'
+        }
+      }
+
+      const user = userRes.data[0]
+
+      if (user.user_role !== 1) {
+        return {
+          code: 403,
+          message: '仅剧组用户可以申请企业认证'
+        }
+      }
+
+      // 检查是否已通过认证
+      if (user.is_enterprise_auth === true) {
+        return {
+          code: 400,
+          message: '您已完成企业认证'
+        }
+      }
+
+      // 检查是否有待审核的申请
+      if (user.enterprise_auth && user.enterprise_auth.verify_status === 'pending') {
+        return {
+          code: 400,
+          message: '您有待审核的企业认证申请,请耐心等待'
+        }
+      }
+
+      // 数据校验
+      if (data.enterprise_code.length !== 18) {
+        return {
+          code: 400,
+          message: '统一社会信用代码必须为18位'
+        }
+      }
+
+      if (!/^1[3-9]\d{9}$/.test(data.contact_mobile)) {
+        return {
+          code: 400,
+          message: '请输入正确的手机号码'
+        }
+      }
+
+      // 更新企业认证信息
+      const enterpriseAuth = {
+        enterprise_name: data.enterprise_name.trim(),
+        enterprise_code: data.enterprise_code.trim(),
+        business_license: data.business_license,
+        legal_representative: data.legal_representative.trim(),
+        id_card_front: data.id_card_front,
+        id_card_back: data.id_card_back,
+        contact_mobile: data.contact_mobile.trim(),
+        submit_time: Date.now(),
+        verify_status: 'pending'
+      }
+
+      await db.collection('uni-id-users')
+        .doc(userId)
+        .update({
+          enterprise_auth: enterpriseAuth,
+          is_enterprise_auth: false, // 待审核状态
+          update_time: Date.now()
+        })
+
+      return {
+        code: 0,
+        message: '企业认证申请已提交,请等待审核'
+      }
+
+    } catch (error) {
+      console.error('提交企业认证失败:', error)
+      return {
+        code: 500,
+        message: error.message || '系统错误'
+      }
+    }
+  },
+
+  /**
+   * 获取企业认证状态
+   * @returns {Object} 认证状态信息
+   */
+  async getEnterpriseAuthStatus() {
+    try {
+      if (!this.authInfo || !this.authInfo.uid) {
+        return {
+          code: 401,
+          message: '请先登录'
+        }
+      }
+
+      const userId = this.authInfo.uid
+
+      const userRes = await db.collection('uni-id-users')
+        .doc(userId)
+        .field({
+          user_role: true,
+          is_enterprise_auth: true,
+          enterprise_auth: true
+        })
+        .get()
+
+      if (!userRes.data || userRes.data.length === 0) {
+        return {
+          code: 404,
+          message: '用户不存在'
+        }
+      }
+
+      const user = userRes.data[0]
+
+      if (user.user_role !== 1) {
+        return {
+          code: 403,
+          message: '仅剧组用户可以查看企业认证状态'
+        }
+      }
+
+      // 返回认证状态
+      const authData = {
+        is_verified: user.is_enterprise_auth === true,
+        status: 'none', // none, pending, approved, rejected
+        reject_reason: null,
+        submit_time: null,
+        verify_time: null,
+        enterprise_name: null
+      }
+
+      if (user.enterprise_auth) {
+        authData.status = user.enterprise_auth.verify_status || 'none'
+        authData.submit_time = user.enterprise_auth.submit_time
+        authData.verify_time = user.enterprise_auth.verify_time
+        authData.reject_reason = user.enterprise_auth.reject_reason
+        authData.enterprise_name = user.enterprise_auth.enterprise_name
+
+        // 如果已通过认证
+        if (user.is_enterprise_auth === true && authData.status === 'approved') {
+          authData.is_verified = true
+        }
+      }
+
+      return {
+        code: 0,
+        data: authData
+      }
+
+    } catch (error) {
+      console.error('获取企业认证状态失败:', error)
+      return {
+        code: 500,
+        message: error.message || '系统错误'
+      }
+    }
   }
 }

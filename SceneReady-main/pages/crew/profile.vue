@@ -197,11 +197,13 @@ export default {
   onLoad() {
     this.loadUserInfo()
     this.loadStats()
+    this.loadEnterpriseAuthStatus()
   },
 
   onShow() {
     this.loadUserInfo()
     this.loadStats()
+    this.loadEnterpriseAuthStatus()
   },
 
   onPullDownRefresh() {
@@ -291,9 +293,24 @@ export default {
       const textMap = {
         'none': '未认证',
         'pending': '审核中',
+        'approved': '已认证',
+        'rejected': '未通过',
         'verified': '已认证'
       }
       return textMap[this.verificationStatus] || '未认证'
+    },
+
+    async loadEnterpriseAuthStatus() {
+      try {
+        const userCo = uniCloud.importObject('user-co')
+        const res = await userCo.getEnterpriseAuthStatus()
+
+        if (res.code === 0) {
+          this.verificationStatus = res.data.status
+        }
+      } catch (error) {
+        console.error('加载企业认证状态失败:', error)
+      }
     },
 
     editAvatar() {
@@ -331,10 +348,8 @@ export default {
     },
 
     goToVerification() {
-      // TODO: 企业认证页面
-      uni.showToast({
-        title: '功能开发中',
-        icon: 'none'
+      uni.navigateTo({
+        url: '/pages/crew/enterprise_auth'
       })
     },
 
