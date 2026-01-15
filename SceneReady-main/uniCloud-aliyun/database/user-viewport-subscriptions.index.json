@@ -1,0 +1,29 @@
+{
+  "indexes": [
+    {
+      "name": "user_id_idx",
+      "field": "user_id",
+      "unique": false
+    },
+    {
+      "name": "push_clientid_idx",
+      "field": "push_clientid",
+      "unique": false
+    },
+    {
+      "name": "is_active_idx",
+      "field": "is_active",
+      "unique": false
+    },
+    {
+      "name": "viewport_southwest_idx",
+      "field": "viewport.southwest.latitude,viewport.southwest.longitude",
+      "unique": false
+    },
+    {
+      "name": "viewport_northeast_idx",
+      "field": "viewport.northeast.latitude,viewport.northeast.longitude",
+      "unique": false
+    }
+  ]
+}

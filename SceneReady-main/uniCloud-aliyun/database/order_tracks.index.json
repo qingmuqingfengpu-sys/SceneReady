@@ -1,0 +1,62 @@
+[
+  {
+    "IndexName": "order_id_report_time",
+    "MgoKeySchema": {
+      "MgoIndexKeys": [
+        {
+          "Name": "order_id",
+          "Direction": "1"
+        },
+        {
+          "Name": "report_time",
+          "Direction": "1"
+        }
+      ],
+      "MgoIsUnique": false
+    }
+  },
+  {
+    "IndexName": "user_id_report_time",
+    "MgoKeySchema": {
+      "MgoIndexKeys": [
+        {
+          "Name": "user_id",
+          "Direction": "1"
+        },
+        {
+          "Name": "report_time",
+          "Direction": "-1"
+        }
+      ],
+      "MgoIsUnique": false
+    }
+  },
+  {
+    "IndexName": "location_2dsphere",
+    "MgoKeySchema": {
+      "MgoIndexKeys": [
+        {
+          "Name": "location",
+          "Direction": "2dsphere"
+        }
+      ],
+      "MgoIsUnique": false
+    }
+  },
+  {
+    "IndexName": "order_id_track_type",
+    "MgoKeySchema": {
+      "MgoIndexKeys": [
+        {
+          "Name": "order_id",
+          "Direction": "1"
+        },
+        {
+          "Name": "track_type",
+          "Direction": "1"
+        }
+      ],
+      "MgoIsUnique": false
+    }
+  }
+]
