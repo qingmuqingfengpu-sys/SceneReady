@@ -81,7 +81,7 @@
         </view>
 
         <view class="form-item upload-item">
-          <text class="item-label">法人身份证正面<text class="required">*</text></text>
+          <text class="item-label">法人身份证国徽面<text class="required">*</text></text>
           <view class="upload-area" @tap="uploadIdCardFront">
             <image
               v-if="formData.id_card_front"
@@ -97,7 +97,8 @@
         </view>
 
         <view class="form-item upload-item">
-          <text class="item-label">法人身份证反面<text class="required">*</text></text>
+          <text class="item-label">法人身份证头像面
+		<text class="required">*</text></text>
           <view class="upload-area" @tap="uploadIdCardBack">
             <image
               v-if="formData.id_card_back"
@@ -429,6 +430,11 @@ export default {
 
 .form-container {
   padding: $spacing-base;
+  box-sizing: border-box;
+
+  * {
+    box-sizing: border-box;
+  }
 }
 
 .form-section {
@@ -477,6 +483,7 @@ export default {
     font-size: $font-size-base;
     border: 2rpx solid transparent;
     transition: border-color 0.3s;
+    box-sizing: border-box;
 
     &:focus {
       border-color: $primary-color;
