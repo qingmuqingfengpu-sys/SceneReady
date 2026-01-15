@@ -1,6 +1,7 @@
 const {
   userCollection,
-  LOG_TYPE
+  LOG_TYPE,
+  USER_STATUS
 } = require('../../common/constants')
 const {
   ERROR
@@ -28,7 +29,9 @@ async function realPreRegister (params = {}) {
     userQuery: user,
     authorizedApp: this.getUniversalClientInfo().appId
   })
-  if (userMatched.length > 0) {
+  // 过滤掉已注销的账户，允许用已注销账户的信息重新注册
+  const activeUsers = userMatched.filter(u => u.status !== USER_STATUS.CLOSED)
+  if (activeUsers.length > 0) {
     throw {
       errCode: ERROR.ACCOUNT_EXISTS
     }

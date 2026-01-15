@@ -11,6 +11,9 @@ const {
 const {
   ERROR
 } = require('../../common/error')
+const {
+  USER_STATUS
+} = require('../../common/constants')
 
 async function realPreUnifiedLogin (params = {}) {
   const {
@@ -25,9 +28,11 @@ async function realPreUnifiedLogin (params = {}) {
     userQuery: user,
     authorizedApp: appId
   })
-  if (userMatched.length === 0) {
+  // 过滤掉已注销的账户，允许用已注销账户的信息重新注册
+  const activeUsers = userMatched.filter(u => u.status !== USER_STATUS.CLOSED)
+  if (activeUsers.length === 0) {
     if (type === 'login') {
-      if (total > 0) {
+      if (total > 0 && userMatched.length === 0) {
         throw {
           errCode: ERROR.ACCOUNT_NOT_EXISTS_IN_CURRENT_APP
         }
@@ -40,19 +45,19 @@ async function realPreUnifiedLogin (params = {}) {
       type: 'register',
       user
     }
-  } if (userMatched.length === 1) {
+  } if (activeUsers.length === 1) {
     if (type === 'register') {
       throw {
         errCode: ERROR.ACCOUNT_EXISTS
       }
     }
-    const userRecord = userMatched[0]
+    const userRecord = activeUsers[0]
     checkLoginUserRecord(userRecord)
     return {
       type: 'login',
       user: userRecord
     }
-  } else if (userMatched.length > 1) {
+  } else if (activeUsers.length > 1) {
     throw {
       errCode: ERROR.ACCOUNT_CONFLICT
     }

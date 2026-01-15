@@ -3,7 +3,8 @@ const {
 } = require('./account')
 const {
   userCollection,
-  LOG_TYPE
+  LOG_TYPE,
+  USER_STATUS
 } = require('../../common/constants')
 const {
   ERROR
@@ -25,8 +26,10 @@ async function realPreLogin (params = {}) {
     userQuery: user,
     authorizedApp: appId
   })
-  if (userMatched.length === 0) {
-    if (total > 0) {
+  // 过滤掉已注销的账户，允许用已注销账户的信息重新注册
+  const activeUsers = userMatched.filter(u => u.status !== USER_STATUS.CLOSED)
+  if (activeUsers.length === 0) {
+    if (total > 0 && userMatched.length === 0) {
       throw {
         errCode: ERROR.ACCOUNT_NOT_EXISTS_IN_CURRENT_APP
       }
@@ -34,12 +37,12 @@ async function realPreLogin (params = {}) {
     throw {
       errCode: ERROR.ACCOUNT_NOT_EXISTS
     }
-  } else if (userMatched.length > 1) {
+  } else if (activeUsers.length > 1) {
     throw {
       errCode: ERROR.ACCOUNT_CONFLICT
     }
   }
-  const userRecord = userMatched[0]
+  const userRecord = activeUsers[0]
   checkLoginUserRecord(userRecord)
   return userRecord
 }
