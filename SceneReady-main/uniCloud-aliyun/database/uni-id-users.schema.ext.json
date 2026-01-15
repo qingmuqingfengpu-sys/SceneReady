@@ -170,6 +170,87 @@
     "wx_unionid": {
       "bsonType": "string",
       "title": "微信unionid"
+    },
+    "enterprise_auth": {
+      "bsonType": "object",
+      "title": "企业认证信息",
+      "description": "企业用户的认证信息(仅剧组角色使用)",
+      "properties": {
+        "enterprise_name": {
+          "bsonType": "string",
+          "title": "企业名称",
+          "description": "营业执照上的企业全称",
+          "trim": "both",
+          "maxLength": 200
+        },
+        "enterprise_code": {
+          "bsonType": "string",
+          "title": "统一社会信用代码",
+          "description": "企业营业执照上的统一社会信用代码",
+          "trim": "both",
+          "maxLength": 50
+        },
+        "business_license": {
+          "bsonType": "string",
+          "title": "营业执照照片",
+          "description": "营业执照照片的云存储URL"
+        },
+        "legal_representative": {
+          "bsonType": "string",
+          "title": "法定代表人",
+          "description": "企业法定代表人姓名",
+          "trim": "both",
+          "maxLength": 50
+        },
+        "id_card_front": {
+          "bsonType": "string",
+          "title": "法人身份证正面",
+          "description": "法人身份证正面照片URL"
+        },
+        "id_card_back": {
+          "bsonType": "string",
+          "title": "法人身份证反面",
+          "description": "法人身份证反面照片URL"
+        },
+        "contact_mobile": {
+          "bsonType": "string",
+          "title": "企业联系电话",
+          "description": "企业对外联系电话",
+          "trim": "both",
+          "maxLength": 20
+        },
+        "submit_time": {
+          "bsonType": "timestamp",
+          "title": "提交时间",
+          "description": "企业认证提交时间"
+        },
+        "verify_time": {
+          "bsonType": "timestamp",
+          "title": "审核时间",
+          "description": "审核完成时间"
+        },
+        "verify_status": {
+          "bsonType": "string",
+          "title": "审核状态",
+          "enum": ["pending", "approved", "rejected"],
+          "description": "pending-待审核, approved-已通过, rejected-已拒绝"
+        },
+        "reject_reason": {
+          "bsonType": "string",
+          "title": "拒绝原因",
+          "description": "审核拒绝时的原因说明"
+        },
+        "verified_at": {
+          "bsonType": "timestamp",
+          "title": "认证通过时间"
+        }
+      }
+    },
+    "is_enterprise_auth": {
+      "bsonType": "bool",
+      "title": "企业认证状态",
+      "description": "是否已完成企业认证",
+      "defaultValue": false
     }
   }
 }
