@@ -454,11 +454,11 @@ export default {
 
     // 操作方法
     viewCrewProfile() {
-      // TODO: 查看剧组资料
-      uni.showToast({
-        title: '功能开发中',
-        icon: 'none'
-      })
+      if (this.job && this.job.publisher_id) {
+        uni.navigateTo({
+          url: `/pages/crew/crew_detail?id=${this.job.publisher_id}`
+        })
+      }
     },
 
     openNavigation() {

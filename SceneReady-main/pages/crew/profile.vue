@@ -16,6 +16,26 @@
         </view>
       </view>
 
+      <!-- 剧组介绍图片预览 -->
+      <view class="intro-card-section" @tap="showIntroUploadOptions">
+        <view v-if="crewIntroCards.length > 0" class="intro-preview">
+          <image
+            class="intro-thumbnail"
+            :src="crewIntroCards[0].url"
+            mode="aspectFill"
+          ></image>
+          <view class="intro-mask">
+            <uni-icons type="image" size="32" color="#fff"></uni-icons>
+            <text>剧组介绍 ({{ crewIntroCards.length }}张)</text>
+          </view>
+        </view>
+        <view v-else class="intro-upload">
+          <uni-icons type="plusempty" size="40" color="#FFD700"></uni-icons>
+          <text>上传图片介绍剧组</text>
+          <text class="upload-hint">展示剧组实力，提升演员信任</text>
+        </view>
+      </view>
+
       <!-- 信用分展示 -->
       <view class="credit-card">
         <view class="credit-left">
@@ -155,6 +175,43 @@
       <button class="logout-btn" @tap="logout">退出登录</button>
     </view>
 
+    <!-- 剧组介绍图片上传/管理弹窗 -->
+    <uni-popup ref="introPopup" type="bottom">
+      <view class="intro-popup">
+        <view class="intro-popup-header">
+          <text class="intro-popup-title">剧组介绍图片</text>
+          <view class="intro-popup-close" @tap="closeIntroPopup">
+            <uni-icons type="closeempty" size="20" color="#999"></uni-icons>
+          </view>
+        </view>
+
+        <!-- 已上传的图片列表 -->
+        <view class="intro-images-grid" v-if="crewIntroCards.length > 0">
+          <view class="intro-image-item" v-for="(card, index) in crewIntroCards" :key="index">
+            <image :src="card.url" mode="aspectFill" @tap="previewIntroImage(index)"></image>
+            <view class="delete-btn" @tap.stop="deleteIntroImage(index)">
+              <uni-icons type="trash" size="14" color="#fff"></uni-icons>
+            </view>
+          </view>
+          <!-- 添加按钮（最多9张） -->
+          <view class="intro-image-item add-btn" v-if="crewIntroCards.length < 9" @tap="uploadIntroImages">
+            <uni-icons type="plusempty" size="32" color="#FFD700"></uni-icons>
+          </view>
+        </view>
+
+        <!-- 空状态 -->
+        <view class="intro-empty" v-else>
+          <uni-icons type="image" size="60" color="#ccc"></uni-icons>
+          <text class="empty-text">暂无剧组介绍图片</text>
+          <button class="upload-btn" @tap="uploadIntroImages">上传图片</button>
+        </view>
+
+        <view class="intro-popup-hint">
+          <text>上传剧组工作照、场地照片等，最多9张</text>
+        </view>
+      </view>
+    </uni-popup>
+
     <!-- 底部 TabBar -->
     <custom-tabbar role="crew" :current="2" @refresh="loadUserInfo"></custom-tabbar>
   </view>
@@ -165,6 +222,7 @@ export default {
   data() {
     return {
       userInfo: {},
+      userId: '',
       stats: {
         pending: 0,
         ongoing: 0,
@@ -173,7 +231,8 @@ export default {
       },
       favoriteCount: 0,
       verificationStatus: 'none', // none, pending, verified
-      walletBalance: '0.00'
+      walletBalance: '0.00',
+      crewIntroCards: [] // 剧组介绍图片
     }
   },
 
@@ -226,6 +285,7 @@ export default {
         // 从云端获取最新用户信息
         const cloudUserInfo = await uniCloud.getCurrentUserInfo()
         if (cloudUserInfo && cloudUserInfo.uid) {
+          this.userId = cloudUserInfo.uid
           const db = uniCloud.database()
           const res = await db.collection('uni-id-users').doc(cloudUserInfo.uid).field({
             nickname: true,
@@ -234,13 +294,15 @@ export default {
             wx_avatar: true,
             credit_score_crew: true,
             verification_status: true,
-            wallet_balance: true
+            wallet_balance: true,
+            crew_introduction_images: true
           }).get()
 
           if (res.result.data && res.result.data.length > 0) {
             this.userInfo = { ...this.userInfo, ...res.result.data[0] }
             this.verificationStatus = res.result.data[0].verification_status || 'none'
             this.walletBalance = ((res.result.data[0].wallet_balance || 0) / 100).toFixed(2)
+            this.crewIntroCards = res.result.data[0].crew_introduction_images || []
           }
         }
       } catch (error) {
@@ -346,6 +408,130 @@ export default {
         icon: 'none'
       })
     },
+
+    // ========== 剧组介绍图片相关方法 ==========
+    showIntroUploadOptions() {
+      this.$refs.introPopup.open()
+    },
+
+    closeIntroPopup() {
+      this.$refs.introPopup.close()
+    },
+
+    async uploadIntroImages() {
+      try {
+        const chooseRes = await new Promise((resolve, reject) => {
+          uni.chooseImage({
+            count: 9 - this.crewIntroCards.length,
+            sizeType: ['compressed'],
+            sourceType: ['album', 'camera'],
+            success: resolve,
+            fail: reject
+          })
+        })
+
+        const files = chooseRes.tempFilePaths
+        if (files.length === 0) return
+
+        uni.showLoading({ title: '上传中...', mask: true })
+
+        const newCards = []
+        for (let i = 0; i < files.length; i++) {
+          uni.showLoading({
+            title: `上传中 ${i + 1}/${files.length}`,
+            mask: true
+          })
+
+          const uploadRes = await uniCloud.uploadFile({
+            filePath: files[i],
+            cloudPath: `crew_intro/${this.userId}/${Date.now()}_${i}.jpg`
+          })
+
+          newCards.push({
+            url: uploadRes.fileID,
+            create_time: Date.now()
+          })
+        }
+
+        // 更新数据库
+        const db = uniCloud.database()
+        const updatedCards = [...this.crewIntroCards, ...newCards]
+
+        await db.collection('uni-id-users').doc(this.userId).update({
+          crew_introduction_images: updatedCards
+        })
+
+        // 更新本地数据
+        this.crewIntroCards = updatedCards
+
+        uni.hideLoading()
+        uni.showToast({
+          title: `成功上传${newCards.length}张图片`,
+          icon: 'success'
+        })
+
+      } catch (error) {
+        uni.hideLoading()
+        if (error.errMsg && error.errMsg.includes('cancel')) {
+          return
+        }
+        console.error('上传失败:', error)
+        uni.showToast({ title: '上传失败', icon: 'none' })
+      }
+    },
+
+    async deleteIntroImage(index) {
+      uni.showModal({
+        title: '确认删除',
+        content: '确定要删除这张图片吗？',
+        success: async (res) => {
+          if (res.confirm) {
+            try {
+              uni.showLoading({ title: '删除中...', mask: true })
+
+              // 删除云存储中的文件
+              const card = this.crewIntroCards[index]
+              if (card.url) {
+                try {
+                  await uniCloud.deleteFile({ fileList: [card.url] })
+                } catch (e) {
+                  console.warn('删除云存储文件失败:', e)
+                }
+              }
+
+              // 更新数据库
+              const updatedCards = [...this.crewIntroCards]
+              updatedCards.splice(index, 1)
+
+              const db = uniCloud.database()
+              await db.collection('uni-id-users').doc(this.userId).update({
+                crew_introduction_images: updatedCards
+              })
+
+              // 更新本地数据
+              this.crewIntroCards = updatedCards
+
+              uni.hideLoading()
+              uni.showToast({ title: '删除成功', icon: 'success' })
+
+            } catch (error) {
+              uni.hideLoading()
+              console.error('删除失败:', error)
+              uni.showToast({ title: '删除失败', icon: 'none' })
+            }
+          }
+        }
+      })
+    },
+
+    previewIntroImage(index) {
+      const urls = this.crewIntroCards.map(card => card.url)
+      uni.previewImage({
+        urls: urls,
+        current: index
+      })
+    },
+    // ========== 剧组介绍图片方法结束 ==========
 
     goToVerification() {
       uni.navigateTo({
@@ -685,6 +871,157 @@ export default {
 
     &:active {
       background-color: rgba($alert-color, 0.1);
+    }
+  }
+}
+
+// 剧组介绍图片弹窗
+.intro-popup {
+  background-color: $bg-secondary;
+  border-radius: $border-radius-lg $border-radius-lg 0 0;
+  padding: $spacing-lg;
+  padding-bottom: calc(#{$spacing-lg} + env(safe-area-inset-bottom));
+  max-height: 70vh;
+
+  .intro-popup-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: $spacing-lg;
+
+    .intro-popup-title {
+      font-size: $font-size-lg;
+      font-weight: $font-weight-bold;
+      color: $text-primary;
+    }
+
+    .intro-popup-close {
+      padding: $spacing-sm;
+    }
+  }
+
+  .intro-images-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: $spacing-sm;
+    margin-bottom: $spacing-base;
+
+    .intro-image-item {
+      position: relative;
+      aspect-ratio: 1;
+      border-radius: $border-radius-base;
+      overflow: hidden;
+      background-color: $bg-tertiary;
+
+      image {
+        width: 100%;
+        height: 100%;
+      }
+
+      .delete-btn {
+        position: absolute;
+        top: 8rpx;
+        right: 8rpx;
+        width: 44rpx;
+        height: 44rpx;
+        background-color: rgba($alert-color, 0.9);
+        border-radius: 50%;
+        @include flex-center;
+      }
+
+      &.add-btn {
+        @include flex-center;
+        border: 2rpx dashed $gray-4;
+
+        &:active {
+          opacity: 0.7;
+        }
+      }
+    }
+  }
+
+  .intro-empty {
+    @include flex-center;
+    @include flex-column;
+    padding: $spacing-xl 0;
+    gap: $spacing-base;
+
+    .empty-text {
+      font-size: $font-size-base;
+      color: $text-hint;
+    }
+
+    .upload-btn {
+      margin-top: $spacing-sm;
+      @include button-primary;
+      padding: 0 $spacing-xl;
+      height: 72rpx;
+      font-size: $font-size-base;
+    }
+  }
+
+  .intro-popup-hint {
+    text-align: center;
+    padding-top: $spacing-base;
+    border-top: 1rpx solid rgba(255, 255, 255, 0.1);
+
+    text {
+      font-size: $font-size-sm;
+      color: $text-hint;
+    }
+  }
+}
+
+// 剧组介绍图片预览区域
+.intro-card-section {
+  margin-bottom: $spacing-lg;
+  border-radius: $border-radius-base;
+  overflow: hidden;
+
+  .intro-preview {
+    position: relative;
+    height: 200rpx;
+
+    .intro-thumbnail {
+      width: 100%;
+      height: 100%;
+    }
+
+    .intro-mask {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      top: 0;
+      background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
+      @include flex-center;
+      @include flex-column;
+      gap: 8rpx;
+
+      text {
+        font-size: $font-size-sm;
+        color: $white;
+      }
+    }
+  }
+
+  .intro-upload {
+    height: 200rpx;
+    background-color: $bg-tertiary;
+    border: 2rpx dashed $gray-4;
+    border-radius: $border-radius-base;
+    @include flex-center;
+    @include flex-column;
+    gap: 8rpx;
+
+    text {
+      font-size: $font-size-base;
+      color: $text-secondary;
+    }
+
+    .upload-hint {
+      font-size: $font-size-xs;
+      color: $text-hint;
     }
   }
 }

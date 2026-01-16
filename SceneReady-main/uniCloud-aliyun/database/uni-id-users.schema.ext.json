@@ -251,6 +251,32 @@
       "title": "企业认证状态",
       "description": "是否已完成企业认证",
       "defaultValue": false
+    },
+    "crew_introduction_images": {
+      "bsonType": "array",
+      "title": "剧组介绍图片",
+      "description": "剧组介绍图片列表(仅剧组角色使用)",
+      "items": {
+        "bsonType": "object",
+        "properties": {
+          "url": {
+            "bsonType": "string",
+            "title": "图片URL",
+            "description": "图片的云存储URL"
+          },
+          "create_time": {
+            "bsonType": "timestamp",
+            "title": "上传时间"
+          }
+        }
+      }
+    },
+    "wechat_id": {
+      "bsonType": "string",
+      "title": "微信号",
+      "description": "用户的微信号",
+      "trim": "both",
+      "maxLength": 50
     }
   }
 }

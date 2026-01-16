@@ -182,6 +182,13 @@
 				"navigationBarTitleText": "企业认证",
 				"enablePullDownRefresh": false
 			}
+		},
+		{
+			"path": "pages/crew/crew_detail",
+			"style": {
+				"navigationBarTitleText": "剧组详情",
+				"enablePullDownRefresh": true
+			}
 		}
 	],
 	"easycom": {

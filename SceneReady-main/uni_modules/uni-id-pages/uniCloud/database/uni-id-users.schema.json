@@ -577,6 +577,48 @@
 				"read": true,
 				"write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
 			}
+		},
+		"crew_introduction_images": {
+			"bsonType": "array",
+			"description": "剧组介绍图片列表",
+			"title": "剧组介绍图片",
+			"permission": {
+				"read": true,
+				"write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+			}
+		},
+		"user_role": {
+			"bsonType": "int",
+			"description": "用户角色: 1-剧组 2-演员",
+			"permission": {
+				"read": true,
+				"write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+			}
+		},
+		"current_location": {
+			"bsonType": "object",
+			"description": "当前位置(GeoJSON)",
+			"permission": {
+				"read": true,
+				"write": "doc._id == auth.uid || 'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+			}
+		},
+		"is_enterprise_auth": {
+			"bsonType": "bool",
+			"description": "是否已企业认证",
+			"defaultValue": false,
+			"permission": {
+				"read": true,
+				"write": "'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+			}
+		},
+		"enterprise_auth": {
+			"bsonType": "object",
+			"description": "企业认证信息",
+			"permission": {
+				"read": "doc._id == auth.uid || 'READ_UNI_ID_USERS' in auth.permission",
+				"write": "'CREATE_UNI_ID_USERS' in auth.permission || 'UPDATE_UNI_ID_USERS' in auth.permission"
+			}
 		}
 	},
 	"required": []
